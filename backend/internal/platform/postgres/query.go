@@ -5,19 +5,52 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 func FormatQuery(query string, args ...any) (string, error) {
-	formatted := query
+	literals := make([]string, len(args))
 	for index, arg := range args {
-		placeholder := "$" + strconv.Itoa(index+1)
 		literal, err := literal(arg)
 		if err != nil {
 			return "", fmt.Errorf("format arg %d: %w", index+1, err)
 		}
-		formatted = strings.ReplaceAll(formatted, placeholder, literal)
+		literals[index] = literal
 	}
-	return formatted, nil
+
+	var builder strings.Builder
+	builder.Grow(len(query))
+
+	for index := 0; index < len(query); index++ {
+		if query[index] != '$' {
+			builder.WriteByte(query[index])
+			continue
+		}
+
+		end := index + 1
+		for end < len(query) && unicode.IsDigit(rune(query[end])) {
+			end++
+		}
+		if end == index+1 {
+			builder.WriteByte(query[index])
+			continue
+		}
+
+		placeholderIndex, err := strconv.Atoi(query[index+1 : end])
+		if err != nil {
+			return "", fmt.Errorf("parse placeholder %q: %w", query[index:end], err)
+		}
+		if placeholderIndex < 1 || placeholderIndex > len(literals) {
+			builder.WriteString(query[index:end])
+			index = end - 1
+			continue
+		}
+
+		builder.WriteString(literals[placeholderIndex-1])
+		index = end - 1
+	}
+
+	return builder.String(), nil
 }
 
 func literal(value any) (string, error) {
