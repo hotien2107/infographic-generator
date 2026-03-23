@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -9,23 +10,87 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"infographic-generator/backend/internal/api"
 	"infographic-generator/backend/internal/config"
+	"infographic-generator/backend/internal/modules/documents"
+	"infographic-generator/backend/internal/modules/projects"
+	"infographic-generator/backend/internal/utils"
 )
+
+type memoryStore struct {
+	projects  map[string]projects.Project
+	documents map[string][]documents.Document
+}
+
+func newMemoryStore() *memoryStore {
+	return &memoryStore{
+		projects:  make(map[string]projects.Project),
+		documents: make(map[string][]documents.Document),
+	}
+}
+
+func (s *memoryStore) CreateProject(_ context.Context, title string, inputMode projects.InputMode) (projects.Project, error) {
+	now := time.Now().UTC()
+	project := projects.Project{
+		ID:          utils.NewUUID(),
+		Title:       title,
+		InputMode:   inputMode,
+		Status:      projects.StatusDraft,
+		CurrentStep: projects.StepWaitingUpload,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	s.projects[project.ID] = project
+	return project, nil
+}
+
+func (s *memoryStore) GetProject(_ context.Context, projectID string) (projects.Project, []documents.Document, error) {
+	project, ok := s.projects[projectID]
+	if !ok {
+		return projects.Project{}, nil, projects.ErrProjectNotFound
+	}
+	return project, append([]documents.Document(nil), s.documents[projectID]...), nil
+}
+
+func (s *memoryStore) AddDocument(_ context.Context, projectID string, document documents.Document) (projects.Project, []documents.Document, error) {
+	project, ok := s.projects[projectID]
+	if !ok {
+		return projects.Project{}, nil, projects.ErrProjectNotFound
+	}
+	project.Status = projects.StatusUploaded
+	project.CurrentStep = projects.StepUploaded
+	project.UpdatedAt = time.Now().UTC()
+	s.projects[projectID] = project
+	s.documents[projectID] = append(s.documents[projectID], document)
+	return project, append([]documents.Document(nil), s.documents[projectID]...), nil
+}
+
+func (s *memoryStore) Close() {}
+
+type fakeBlobStorage struct{}
+
+func (s *fakeBlobStorage) Save(_ context.Context, fileHeader *multipart.FileHeader) (string, error) {
+	return filepath.Join("documents", fileHeader.Filename), nil
+}
+
+func (s *fakeBlobStorage) Close() error { return nil }
 
 func newTestHandler(t *testing.T) http.Handler {
 	t.Helper()
-	storageDir := filepath.Join(t.TempDir(), "uploads")
 	cfg := config.Config{
-		AppEnv:           "test",
-		Port:             "0",
-		StorageDir:       storageDir,
-		MaxUploadSizeMB:  1,
-		AllowedFileTypes: []string{"pdf", "docx", "txt"},
+		AppEnv:               "test",
+		Port:                 "0",
+		MaxUploadSizeMB:      1,
+		AllowedFileTypes:     []string{"pdf", "docx", "txt"},
+		MultipartThresholdMB: 16,
+		MultipartPartSizeMB:  8,
 	}
 
-	return api.New(cfg).Handler()
+	app := api.New(cfg, newMemoryStore(), &fakeBlobStorage{})
+	t.Cleanup(app.Close)
+	return app.Handler()
 }
 
 func TestCreateProjectAndGetDetail(t *testing.T) {
@@ -113,8 +178,9 @@ func TestUploadDocumentUpdatesProjectState(t *testing.T) {
 				CurrentStep string `json:"current_step"`
 			} `json:"project"`
 			Document struct {
-				Filename string `json:"filename"`
-				MimeType string `json:"mime_type"`
+				Filename   string `json:"filename"`
+				MimeType   string `json:"mime_type"`
+				StorageKey string `json:"storage_key"`
 			} `json:"document"`
 		} `json:"data"`
 	}
@@ -127,6 +193,9 @@ func TestUploadDocumentUpdatesProjectState(t *testing.T) {
 	}
 	if uploaded.Data.Document.Filename != "brief.txt" || uploaded.Data.Document.MimeType != "text/plain" {
 		t.Fatalf("unexpected document data: %+v", uploaded.Data.Document)
+	}
+	if uploaded.Data.Document.StorageKey != filepath.Join("documents", "sample.txt") {
+		t.Fatalf("unexpected storage key: %s", uploaded.Data.Document.StorageKey)
 	}
 }
 
