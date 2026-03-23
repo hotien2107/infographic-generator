@@ -10,6 +10,7 @@ import (
 	"infographic-generator/backend/internal/api"
 	"infographic-generator/backend/internal/config"
 	"infographic-generator/backend/internal/modules/projects"
+	"infographic-generator/backend/internal/processing"
 	"infographic-generator/backend/internal/storage"
 )
 
@@ -30,7 +31,12 @@ func main() {
 		log.Fatalf("init minio storage: %v", err)
 	}
 
-	app := api.New(cfg, store, blobStorage)
+	service := projects.NewService(store, blobStorage, nil, cfg.AutoProcessDocuments)
+	worker := processing.NewWorker(service, cfg.ProcessingQueueBuffer, cfg.ProcessingStepDelay, cfg.ProcessingFailPattern)
+	service.SetProcessor(worker)
+	worker.Start(ctx)
+
+	app := api.New(cfg, store, blobStorage, service)
 	defer app.Close()
 
 	log.Printf("starting api on :%s", cfg.Port)

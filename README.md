@@ -2,27 +2,30 @@
 
 AI Infographic Generator là dự án xây dựng nền tảng web dùng AI để chuyển đổi tài liệu, văn bản tự do hoặc dữ liệu có cấu trúc thành infographic trực quan.
 
-Dự án tập trung vào ba năng lực cốt lõi:
-- hiểu nội dung đầu vào và xác định các ý chính;
-- tổ chức thông tin thành cấu trúc phù hợp để trực quan hóa;
-- tạo ra infographic dễ đọc, dễ chia sẻ và có giá trị sử dụng thực tế.
+## Repo structure
 
-## Sprint 1 codebase
+- `backend/`: Go REST API.
+- `frontend/`: React + Vite + Tailwind + shadcn/ui.
+- `contracts/`: OpenAPI contracts cho từng sprint.
+- `docs/sprints/`: sprint plans, boards, DoD và implementation notes.
 
-Repository hiện có:
-- `backend/`: REST API Go cho Sprint 1.
-- `frontend/`: giao diện React tách biệt với backend, build bằng Vite + React + Tailwind theo style `shadcn/ui`.
+## Sprint 1 hiện có
 
-Backend foundation tại `backend/` bám theo contract ở `contracts/sprint-1-api.yaml`, và frontend tại `frontend/` tiêu thụ trực tiếp các endpoint trong contract đó.
+- Create project.
+- Get project detail.
+- Upload document.
+- Validation siết chặt theo contract.
+- Response envelope thống nhất `data / error / meta`.
 
-### Thành phần chính
-- REST API Go cho các luồng `create project`, `get project`, `upload document`.
-- PostgreSQL store để lưu metadata của `projects` và `documents`, tự khởi tạo schema khi service boot.
-- MinIO object-storage adapter cho file upload; file lớn sẽ được gửi bằng multipart upload để tối ưu throughput và độ ổn định.
-- Frontend React riêng biệt với backend, cung cấp dashboard tạo project, nạp lại trạng thái và upload tài liệu theo Sprint 1.
-- Test API happy path và validation quan trọng của Sprint 1 bằng fake dependency để không cần service ngoài khi chạy unit test.
+## Sprint 2 hiện có
 
-### Chạy backend local
+- Project/document processing lifecycle rõ ràng.
+- Auto-processing sau upload bằng in-memory worker.
+- Manual trigger processing qua API riêng.
+- Processing summary + metadata extraction giả lập.
+- Frontend hiển thị status badge, lifecycle summary, fail/success state.
+
+## Chạy backend local
 
 ```bash
 cd backend
@@ -33,29 +36,8 @@ make run
 
 API mặc định chạy ở `http://localhost:8080`.
 
-### Chạy frontend local
+### Biến môi trường backend chính
 
-```bash
-cd frontend
-cp .env.example .env
-npm install
-npm run dev
-```
-
-Frontend mặc định chạy ở `http://localhost:5173` và sẽ gọi backend qua:
-- `VITE_API_BASE_URL` nếu bạn cấu hình URL tuyệt đối;
-- hoặc proxy dev server tới `http://localhost:8080`.
-
-### Build frontend
-
-```bash
-cd frontend
-npm run build
-```
-
-### Biến môi trường chính
-
-#### Backend
 - `APP_ENV`
 - `API_PORT`
 - `MAX_UPLOAD_SIZE_MB`
@@ -69,11 +51,50 @@ npm run build
 - `MINIO_AUTO_CREATE_BUCKET`
 - `MINIO_MULTIPART_THRESHOLD_MB`
 - `MINIO_MULTIPART_PART_SIZE_MB`
+- `AUTO_PROCESS_DOCUMENTS`
+- `PROCESSING_QUEUE_BUFFER`
+- `PROCESSING_STEP_DELAY_MS`
+- `PROCESSING_FAIL_PATTERN`
 
-#### Frontend
-- `VITE_API_BASE_URL`
-- `VITE_API_PROXY_TARGET`
+## Chạy frontend local
 
-## Bộ tài liệu sprint
+```bash
+cd frontend
+cp .env.example .env
+npm install
+npm run dev
+```
 
-Các tài liệu quản trị sprint và backlog triển khai được đặt tại thư mục `docs/sprints/`, bao gồm backlog tổng, Definition of Done, sprint plan cho từng sprint và sprint board cho Sprint 1.
+Frontend mặc định chạy ở `http://localhost:5173` và gọi backend qua:
+
+- `VITE_API_BASE_URL` nếu bạn cấu hình URL tuyệt đối.
+- hoặc proxy dev server tới `http://localhost:8080`.
+
+## Test
+
+### Backend
+
+```bash
+cd backend
+go test ./...
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run test
+npm run build
+```
+
+## Tài liệu chính
+
+- Sprint 1 contract: `contracts/sprint-1-api.yaml`
+- Sprint 2 contract: `contracts/sprint-2-api.yaml`
+- Sprint 1 plan: `docs/sprints/sprint-1-plan.md`
+- Sprint 1 board: `docs/sprints/sprint-1-board.md`
+- Sprint 1 implementation notes: `docs/sprints/sprint-1-implementation-notes.md`
+- Sprint 2 plan: `docs/sprints/sprint-2-plan.md`
+- Sprint 2 board: `docs/sprints/sprint-2-board.md`
+- Definition of Done: `docs/sprints/definition-of-done.md`
