@@ -1,0 +1,380 @@
+openapi: 3.1.0
+info:
+  title: AI Infographic Generator Sprint 1 API Contract
+  version: 1.0.0
+  summary: Hợp đồng API dùng chung cho backend và frontend trong Sprint 1.
+  description: |
+    Đây là nguồn dữ liệu hợp đồng (single source of truth) cho sprint đầu tiên,
+    bao phủ các luồng tạo project, upload tài liệu và lấy chi tiết project.
+    Frontend và backend phải cùng bám theo schema, enum trạng thái và format lỗi
+    được mô tả trong tài liệu này để tránh lệch contract.
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Projects
+  - name: Documents
+
+paths:
+  /api/v1/projects:
+    post:
+      tags: [Projects]
+      summary: Tạo project mới
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Tạo project thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectEnvelope'
+        '400':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/projects/{projectId}:
+    get:
+      tags: [Projects]
+      summary: Lấy chi tiết project cho màn hình frontend
+      operationId: getProjectById
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Lấy project thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetailEnvelope'
+        '404':
+          description: Không tìm thấy project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/projects/{projectId}/documents:
+    post:
+      tags: [Documents]
+      summary: Upload tài liệu đầu vào cho project
+      operationId: uploadProjectDocument
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadDocumentRequest'
+      responses:
+        '202':
+          description: Upload thành công và project sẵn sàng cho bước xử lý tiếp theo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentEnvelope'
+        '400':
+          description: File không hợp lệ hoặc thiếu dữ liệu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Không tìm thấy project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: Định danh project theo UUID.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    EnvelopeMeta:
+      type: object
+      additionalProperties: false
+      properties:
+        request_id:
+          type: string
+          description: ID request để backend/frontend cùng trace log.
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - request_id
+        - timestamp
+
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - INVALID_FILE_TYPE
+            - FILE_TOO_LARGE
+            - PROJECT_NOT_FOUND
+        message:
+          type: string
+        field:
+          type:
+            - string
+            - 'null'
+      required:
+        - code
+        - message
+        - field
+
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          type: 'null'
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required:
+        - data
+        - error
+        - meta
+
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 120
+          description: Tên project hiển thị trên UI.
+        input_mode:
+          type: string
+          enum:
+            - file
+            - text
+          description: Sprint 1 hỗ trợ khởi tạo project theo mode để frontend render đúng luồng.
+      required:
+        - title
+        - input_mode
+
+    Project:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        input_mode:
+          type: string
+          enum:
+            - file
+            - text
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        current_step:
+          type: string
+          enum:
+            - project_created
+            - waiting_for_upload
+            - uploaded
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - input_mode
+        - status
+        - current_step
+        - created_at
+        - updated_at
+
+    ProjectStatus:
+      type: string
+      description: Enum trạng thái dùng chung cho frontend badge/state machine và backend persistence.
+      enum:
+        - draft
+        - uploaded
+
+    CreateProjectResponse:
+      allOf:
+        - $ref: '#/components/schemas/Project'
+
+    ProjectDetailResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        input_mode:
+          type: string
+          enum:
+            - file
+            - text
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        current_step:
+          type: string
+          enum:
+            - project_created
+            - waiting_for_upload
+            - uploaded
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - input_mode
+        - status
+        - current_step
+        - documents
+        - created_at
+        - updated_at
+
+    UploadDocumentRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        file:
+          type: string
+          format: binary
+          description: File upload cho sprint 1; chấp nhận PDF, DOCX, TXT.
+        original_filename:
+          type: string
+          description: Tên file gốc để backend lưu metadata nhất quán.
+      required:
+        - file
+
+    Document:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        mime_type:
+          type: string
+          enum:
+            - application/pdf
+            - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+            - text/plain
+        size_bytes:
+          type: integer
+          minimum: 1
+        storage_key:
+          type: string
+        status:
+          type: string
+          enum:
+            - uploaded
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - project_id
+        - filename
+        - mime_type
+        - size_bytes
+        - storage_key
+        - status
+        - created_at
+
+    UploadDocumentResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        project:
+          $ref: '#/components/schemas/Project'
+        document:
+          $ref: '#/components/schemas/Document'
+      required:
+        - project
+        - document
+
+    ProjectEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/CreateProjectResponse'
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required:
+        - data
+        - error
+        - meta
+
+    ProjectDetailEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/ProjectDetailResponse'
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required:
+        - data
+        - error
+        - meta
+
+    DocumentEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/UploadDocumentResponse'
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required:
+        - data
+        - error
+        - meta
