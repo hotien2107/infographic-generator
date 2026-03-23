@@ -13,6 +13,7 @@ type Config struct {
 	StorageDir       string
 	MaxUploadSizeMB  int
 	AllowedFileTypes []string
+	FrontendOrigin   string
 }
 
 func Load() Config {
@@ -29,6 +30,7 @@ func Load() Config {
 		StorageDir:       storageDir,
 		MaxUploadSizeMB:  getEnvAsInt("MAX_UPLOAD_SIZE_MB", 10),
 		AllowedFileTypes: getEnvAsSlice("ALLOWED_FILE_TYPES", []string{"pdf", "docx", "txt"}),
+		FrontendOrigin:   getEnv("FRONTEND_ORIGIN", "http://localhost:5173"),
 	}
 }
 

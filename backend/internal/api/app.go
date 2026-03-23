@@ -50,6 +50,12 @@ func (a *App) Handler() http.Handler {
 }
 
 func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	a.applyCORS(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
 		a.writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 		return
@@ -78,6 +84,18 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"error": ErrorDetail{Code: "PROJECT_NOT_FOUND", Message: "route not found", Field: nil},
 		"meta":  meta(utils.NewUUID()),
 	})
+}
+
+func (a *App) applyCORS(w http.ResponseWriter, r *http.Request) {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	allowedOrigin := strings.TrimSpace(a.config.FrontendOrigin)
+	if origin != "" && origin == allowedOrigin {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+	}
+
+	w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }
 
 func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
@@ -259,7 +277,9 @@ func mimeTypeForExtension(extension string) string {
 		return "application/pdf"
 	case "docx":
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	default:
+	case "txt":
 		return "text/plain"
+	default:
+		return "application/octet-stream"
 	}
 }
