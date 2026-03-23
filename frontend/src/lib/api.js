@@ -15,14 +15,14 @@ async function parseResponse(response) {
 
   if (!response.ok || payload.error) {
     throw new ApiError(
-      payload.error?.message ?? 'Unexpected API error',
+      payload.error?.message ?? 'Không thể hoàn tất yêu cầu.',
       payload.error?.code ?? 'UNKNOWN_ERROR',
       payload.error?.field ?? null,
       response.status,
     )
   }
 
-  return payload
+  return payload.data
 }
 
 async function request(path, init) {
@@ -30,7 +30,16 @@ async function request(path, init) {
   return parseResponse(response)
 }
 
+export const dashboardApi = {
+  getSummary() {
+    return request('/api/v1/dashboard/summary')
+  },
+}
+
 export const projectApi = {
+  listProjects() {
+    return request('/api/v1/projects')
+  },
   createProject(input) {
     return request('/api/v1/projects', {
       method: 'POST',
@@ -43,6 +52,20 @@ export const projectApi = {
   getProject(projectId) {
     return request(`/api/v1/projects/${projectId}`)
   },
+  updateProject(projectId, input) {
+    return request(`/api/v1/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+  },
+  deleteProject(projectId) {
+    return request(`/api/v1/projects/${projectId}`, {
+      method: 'DELETE',
+    })
+  },
   uploadDocument(projectId, file) {
     const formData = new FormData()
     formData.append('file', file)
@@ -53,9 +76,18 @@ export const projectApi = {
       body: formData,
     })
   },
-  triggerProcessing(projectId) {
-    return request(`/api/v1/projects/${projectId}/processing`, {
-      method: 'POST',
+  updateDocument(projectId, documentId, input) {
+    return request(`/api/v1/projects/${projectId}/documents/${documentId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+  },
+  deleteDocument(projectId, documentId) {
+    return request(`/api/v1/projects/${projectId}/documents/${documentId}`, {
+      method: 'DELETE',
     })
   },
 }

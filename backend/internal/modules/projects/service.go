@@ -38,12 +38,40 @@ func (s *Service) SetProcessor(processor Processor) {
 	s.processor = processor
 }
 
-func (s *Service) CreateProject(ctx context.Context, title string, inputMode InputMode) (Project, error) {
-	return s.store.CreateProject(ctx, title, inputMode)
+func (s *Service) DashboardSummary(ctx context.Context) (DashboardSummary, error) {
+	return s.store.GetDashboardSummary(ctx)
+}
+
+func (s *Service) ListProjects(ctx context.Context) ([]ProjectListItem, error) {
+	return s.store.ListProjects(ctx)
+}
+
+func (s *Service) CreateProject(ctx context.Context, title, description string, inputMode InputMode) (Project, error) {
+	return s.store.CreateProject(ctx, title, description, inputMode)
 }
 
 func (s *Service) GetProject(ctx context.Context, projectID string) (Project, []documents.Document, error) {
 	return s.store.GetProject(ctx, projectID)
+}
+
+func (s *Service) UpdateProject(ctx context.Context, projectID string, update ProjectUpdate) (Project, error) {
+	return s.store.UpdateProject(ctx, projectID, update)
+}
+
+func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
+	return s.store.DeleteProject(ctx, projectID)
+}
+
+func (s *Service) ListDocuments(ctx context.Context, projectID string) ([]documents.Document, error) {
+	return s.store.ListDocuments(ctx, projectID)
+}
+
+func (s *Service) UpdateDocument(ctx context.Context, projectID, documentID, filename string) (documents.Document, error) {
+	return s.store.UpdateDocument(ctx, projectID, documentID, filename)
+}
+
+func (s *Service) DeleteDocument(ctx context.Context, projectID, documentID string) error {
+	return s.store.DeleteDocument(ctx, projectID, documentID)
 }
 
 func (s *Service) UploadDocument(ctx context.Context, projectID, originalFilename string, fileHeader *multipart.FileHeader) (Project, documents.Document, error) {

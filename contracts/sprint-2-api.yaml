@@ -1,25 +1,47 @@
 openapi: 3.1.0
 info:
-  title: AI Infographic Generator Sprint 2 API Contract
-  version: 2.0.0
-  summary: Contract cho document ingestion + processing lifecycle giả lập.
-  description: |
-    Sprint 2 mở rộng từ flow upload tài liệu của Sprint 1 để tạo nền tảng cho AI pipeline.
-    Backend giữ response envelope thống nhất: { data, error, meta }.
+  title: Infographic Workspace API
+  version: 2.1.0
+  summary: API quản lý dự án, tài liệu và số liệu tổng quan.
 servers:
   - url: http://localhost:8080
-    description: Local development server
+    description: Local API server
 
 tags:
+  - name: Dashboard
   - name: Projects
   - name: Documents
   - name: Processing
 
 paths:
+  /api/v1/dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Lấy số liệu tổng quan cho dashboard
+      operationId: getDashboardSummary
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummaryEnvelope'
+
   /api/v1/projects:
+    get:
+      tags: [Projects]
+      summary: Lấy danh sách dự án
+      operationId: listProjects
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListEnvelope'
     post:
       tags: [Projects]
-      summary: Tạo project mới
+      summary: Tạo dự án mới
       operationId: createProject
       requestBody:
         required: true
@@ -29,7 +51,7 @@ paths:
               $ref: '#/components/schemas/CreateProjectRequest'
       responses:
         '201':
-          description: Tạo project thành công
+          description: Thành công
           content:
             application/json:
               schema:
@@ -40,13 +62,13 @@ paths:
   /api/v1/projects/{projectId}:
     get:
       tags: [Projects]
-      summary: Lấy chi tiết project, tài liệu và processing summary
-      operationId: getProjectById
+      summary: Lấy chi tiết dự án và danh sách tài liệu
+      operationId: getProject
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
         '200':
-          description: Lấy project thành công
+          description: Thành công
           content:
             application/json:
               schema:
@@ -55,11 +77,68 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/ProjectNotFound'
+    patch:
+      tags: [Projects]
+      summary: Cập nhật dự án
+      operationId: updateProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/ProjectNotFound'
+    delete:
+      tags: [Projects]
+      summary: Xóa dự án
+      operationId: deleteProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/ProjectNotFound'
 
   /api/v1/projects/{projectId}/documents:
+    get:
+      tags: [Documents]
+      summary: Lấy danh sách tài liệu theo dự án
+      operationId: listProjectDocuments
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentListEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/ProjectNotFound'
     post:
       tags: [Documents]
-      summary: Upload tài liệu và tự động đưa vào luồng xử lý nếu bật auto-processing
+      summary: Tải tài liệu lên dự án
       operationId: uploadProjectDocument
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -71,30 +150,7 @@ paths:
               $ref: '#/components/schemas/UploadDocumentRequest'
       responses:
         '202':
-          description: Upload thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProcessingEnvelope'
-        '400':
-          description: File không hợp lệ hoặc multipart không hợp lệ
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-        '404':
-          $ref: '#/components/responses/ProjectNotFound'
-
-  /api/v1/projects/{projectId}/processing:
-    post:
-      tags: [Processing]
-      summary: Đưa document mới nhất vào queue xử lý thủ công
-      operationId: triggerProjectProcessing
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '202':
-          description: Enqueue processing thành công
+          description: Thành công
           content:
             application/json:
               schema:
@@ -102,16 +158,82 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
         '404':
-          description: Không tìm thấy project hoặc document
+          $ref: '#/components/responses/ProjectNotFound'
+
+  /api/v1/projects/{projectId}/documents/{documentId}:
+    patch:
+      tags: [Documents]
+      summary: Cập nhật thông tin tài liệu
+      operationId: updateDocument
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDocumentRequest'
+      responses:
+        '200':
+          description: Thành công
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
+                $ref: '#/components/schemas/DocumentEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/DocumentNotFound'
+    delete:
+      tags: [Documents]
+      summary: Xóa tài liệu khỏi dự án
+      operationId: deleteDocument
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/DocumentNotFound'
+
+  /api/v1/projects/{projectId}/processing:
+    post:
+      tags: [Processing]
+      summary: Đưa tài liệu mới nhất vào hàng đợi xử lý
+      operationId: triggerProjectProcessing
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '202':
+          description: Thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/DocumentNotFound'
 
 components:
   parameters:
     ProjectId:
       name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DocumentId:
+      name: documentId
       in: path
       required: true
       schema:
@@ -126,7 +248,13 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     ProjectNotFound:
-      description: Project không tồn tại
+      description: Không tìm thấy dự án
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    DocumentNotFound:
+      description: Không tìm thấy tài liệu
       content:
         application/json:
           schema:
@@ -135,7 +263,6 @@ components:
   schemas:
     EnvelopeMeta:
       type: object
-      additionalProperties: false
       properties:
         request_id:
           type: string
@@ -146,30 +273,17 @@ components:
 
     ErrorDetail:
       type: object
-      additionalProperties: false
       properties:
         code:
           type: string
-          enum:
-            - VALIDATION_ERROR
-            - INVALID_FILE_TYPE
-            - FILE_TOO_LARGE
-            - PROJECT_NOT_FOUND
-            - DOCUMENT_NOT_FOUND
-            - ROUTE_NOT_FOUND
-            - PROJECT_CREATE_FAILED
-            - PERSISTENCE_ERROR
         message:
           type: string
         field:
-          type:
-            - string
-            - 'null'
+          type: [string, 'null']
       required: [code, message, field]
 
     ErrorEnvelope:
       type: object
-      additionalProperties: false
       properties:
         data:
           type: 'null'
@@ -179,6 +293,85 @@ components:
           $ref: '#/components/schemas/EnvelopeMeta'
       required: [data, error, meta]
 
+    DashboardSummary:
+      type: object
+      properties:
+        total_projects: { type: integer }
+        total_documents: { type: integer }
+        processing_projects: { type: integer }
+        completed_projects: { type: integer }
+        attention_projects: { type: integer }
+        draft_projects: { type: integer }
+      required: [total_projects, total_documents, processing_projects, completed_projects, attention_projects, draft_projects]
+
+    ProcessingSummary:
+      type: object
+      properties:
+        total_documents: { type: integer }
+        uploaded_documents: { type: integer }
+        queued_documents: { type: integer }
+        processing_documents: { type: integer }
+        processed_documents: { type: integer }
+        failed_documents: { type: integer }
+        last_processed_at:
+          type: [string, 'null']
+          format: date-time
+        last_error:
+          type: [string, 'null']
+      required: [total_documents, uploaded_documents, queued_documents, processing_documents, processed_documents, failed_documents, last_processed_at, last_error]
+
+    Project:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        input_mode:
+          type: string
+          enum: [file, text]
+        status:
+          type: string
+          enum: [draft, uploaded, processing, processed, failed]
+        document_count: { type: integer }
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        processing_summary:
+          $ref: '#/components/schemas/ProcessingSummary'
+      required: [id, title, description, input_mode, status, created_at, updated_at]
+
+    Document:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        filename: { type: string }
+        mime_type: { type: string }
+        size_bytes: { type: integer }
+        status:
+          type: string
+          enum: [uploaded, queued, processing, processed, failed]
+        processing_started_at:
+          type: [string, 'null']
+          format: date-time
+        processing_finished_at:
+          type: [string, 'null']
+          format: date-time
+        error_message:
+          type: [string, 'null']
+        extracted_text_preview:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, project_id, filename, mime_type, size_bytes, status, processing_started_at, processing_finished_at, error_message, extracted_text_preview, created_at, updated_at]
+
     CreateProjectRequest:
       type: object
       additionalProperties: false
@@ -187,177 +380,31 @@ components:
           type: string
           minLength: 3
           maxLength: 120
+        description:
+          type: string
+          maxLength: 280
         input_mode:
           type: string
           enum: [file, text]
       required: [title, input_mode]
 
-    ProjectStatus:
-      type: string
-      enum: [draft, uploaded, processing, processed, failed]
-
-    ProjectStep:
-      type: string
-      enum:
-        - waiting_for_upload
-        - uploaded
-        - queued_for_processing
-        - extracting
-        - ready_for_generation
-        - failed
-
-    DocumentStatus:
-      type: string
-      enum: [uploaded, queued, processing, processed, failed]
-
-    ProcessingSummary:
+    UpdateProjectRequest:
       type: object
       additionalProperties: false
       properties:
-        total_documents:
-          type: integer
-        uploaded_documents:
-          type: integer
-        queued_documents:
-          type: integer
-        processing_documents:
-          type: integer
-        processed_documents:
-          type: integer
-        failed_documents:
-          type: integer
-        last_processed_at:
-          type:
-            - string
-            - 'null'
-          format: date-time
-        last_error:
-          type:
-            - string
-            - 'null'
-      required:
-        - total_documents
-        - uploaded_documents
-        - queued_documents
-        - processing_documents
-        - processed_documents
-        - failed_documents
-        - last_processed_at
-        - last_error
-
-    Project:
-      type: object
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-          format: uuid
         title:
           type: string
+          minLength: 3
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 280
         input_mode:
           type: string
           enum: [file, text]
-        status:
-          $ref: '#/components/schemas/ProjectStatus'
-        current_step:
-          $ref: '#/components/schemas/ProjectStep'
-        processing_summary:
-          $ref: '#/components/schemas/ProcessingSummary'
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required:
-        - id
-        - title
-        - input_mode
-        - status
-        - current_step
-        - processing_summary
-        - created_at
-        - updated_at
-
-    Document:
-      type: object
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-          format: uuid
-        project_id:
-          type: string
-          format: uuid
-        filename:
-          type: string
-        mime_type:
-          type: string
-          enum:
-            - application/pdf
-            - application/vnd.openxmlformats-officedocument.wordprocessingml.document
-            - text/plain
-        size_bytes:
-          type: integer
-          minimum: 1
-        storage_key:
-          type: string
-        status:
-          $ref: '#/components/schemas/DocumentStatus'
-        processing_started_at:
-          type:
-            - string
-            - 'null'
-          format: date-time
-        processing_finished_at:
-          type:
-            - string
-            - 'null'
-          format: date-time
-        error_message:
-          type:
-            - string
-            - 'null'
-        extracted_text_preview:
-          type:
-            - string
-            - 'null'
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required:
-        - id
-        - project_id
-        - filename
-        - mime_type
-        - size_bytes
-        - storage_key
-        - status
-        - processing_started_at
-        - processing_finished_at
-        - error_message
-        - extracted_text_preview
-        - created_at
-        - updated_at
-
-    ProjectDetailResponse:
-      allOf:
-        - $ref: '#/components/schemas/Project'
-        - type: object
-          additionalProperties: false
-          properties:
-            documents:
-              type: array
-              items:
-                $ref: '#/components/schemas/Document'
-          required: [documents]
 
     UploadDocumentRequest:
       type: object
-      additionalProperties: false
       properties:
         file:
           type: string
@@ -366,22 +413,45 @@ components:
           type: string
       required: [file]
 
-    ProcessingResponse:
+    UpdateDocumentRequest:
       type: object
       additionalProperties: false
       properties:
-        project:
-          $ref: '#/components/schemas/Project'
-        document:
-          $ref: '#/components/schemas/Document'
-      required: [project, document]
+        filename:
+          type: string
+          minLength: 3
+          maxLength: 180
+      required: [filename]
+
+    DashboardSummaryEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/DashboardSummary'
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required: [data, error, meta]
 
     ProjectEnvelope:
       type: object
-      additionalProperties: false
       properties:
         data:
           $ref: '#/components/schemas/Project'
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required: [data, error, meta]
+
+    ProjectListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
         error:
           type: 'null'
         meta:
@@ -390,10 +460,41 @@ components:
 
     ProjectDetailEnvelope:
       type: object
-      additionalProperties: false
       properties:
         data:
-          $ref: '#/components/schemas/ProjectDetailResponse'
+          type: object
+          properties:
+            project:
+              $ref: '#/components/schemas/Project'
+            documents:
+              type: array
+              items:
+                $ref: '#/components/schemas/Document'
+          required: [project, documents]
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required: [data, error, meta]
+
+    DocumentEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Document'
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required: [data, error, meta]
+
+    DocumentListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
         error:
           type: 'null'
         meta:
@@ -402,10 +503,29 @@ components:
 
     ProcessingEnvelope:
       type: object
-      additionalProperties: false
       properties:
         data:
-          $ref: '#/components/schemas/ProcessingResponse'
+          type: object
+          properties:
+            project:
+              $ref: '#/components/schemas/Project'
+            document:
+              $ref: '#/components/schemas/Document'
+          required: [project, document]
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/EnvelopeMeta'
+      required: [data, error, meta]
+
+    DeleteEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
         error:
           type: 'null'
         meta:

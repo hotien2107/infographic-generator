@@ -1,29 +1,21 @@
-# AI Infographic Generator
+# Infographic Project Workspace
 
-AI Infographic Generator là dự án xây dựng nền tảng web dùng AI để chuyển đổi tài liệu, văn bản tự do hoặc dữ liệu có cấu trúc thành infographic trực quan.
+Ứng dụng giúp đội ngũ nội dung quản lý dự án, tài liệu đầu vào và theo dõi tiến độ chuẩn bị dữ liệu cho infographic.
 
-## Repo structure
+## Cấu trúc repo
 
 - `backend/`: Go REST API.
-- `frontend/`: React + Vite + Tailwind + shadcn/ui.
-- `contracts/`: OpenAPI contracts cho từng sprint.
-- `docs/sprints/`: sprint plans, boards, DoD và implementation notes.
+- `frontend/`: React + Vite + Tailwind.
+- `contracts/`: OpenAPI contract cho API hiện tại.
+- `docs/`: tài liệu sản phẩm và kế hoạch triển khai.
 
-## Sprint 1 hiện có
+## Tính năng hiện có
 
-- Create project.
-- Get project detail.
-- Upload document.
-- Validation siết chặt theo contract.
-- Response envelope thống nhất `data / error / meta`.
-
-## Sprint 2 hiện có
-
-- Project/document processing lifecycle rõ ràng.
-- Auto-processing sau upload bằng in-memory worker.
-- Manual trigger processing qua API riêng.
-- Processing summary + metadata extraction giả lập.
-- Frontend hiển thị status badge, lifecycle summary, fail/success state.
+- Trang tổng quan với số liệu dự án và tài liệu.
+- Danh sách dự án riêng, hỗ trợ tạo, sửa, xóa.
+- Trang chi tiết dự án với thông tin tổng quan và danh sách tài liệu.
+- Thêm, đổi tên, xóa tài liệu ngay trong màn hình chi tiết dự án.
+- Backend tự đọc cấu hình từ file `.env` nếu file tồn tại; biến nào không có thì mới dùng giá trị mặc định trong code.
 
 ## Chạy backend local
 
@@ -34,7 +26,7 @@ make tidy
 make run
 ```
 
-API mặc định chạy ở `http://localhost:8080`.
+Backend sẽ tự nạp file `.env` trong thư mục `backend/` khi khởi động.
 
 ### Biến môi trường backend chính
 
@@ -65,10 +57,21 @@ npm install
 npm run dev
 ```
 
-Frontend mặc định chạy ở `http://localhost:5173` và gọi backend qua:
+Frontend mặc định chạy ở `http://localhost:5173`.
 
-- `VITE_API_BASE_URL` nếu bạn cấu hình URL tuyệt đối.
-- hoặc proxy dev server tới `http://localhost:8080`.
+## API chính
+
+- `GET /api/v1/dashboard/summary`
+- `GET /api/v1/projects`
+- `POST /api/v1/projects`
+- `GET /api/v1/projects/{projectId}`
+- `PATCH /api/v1/projects/{projectId}`
+- `DELETE /api/v1/projects/{projectId}`
+- `POST /api/v1/projects/{projectId}/documents`
+- `GET /api/v1/projects/{projectId}/documents`
+- `PATCH /api/v1/projects/{projectId}/documents/{documentId}`
+- `DELETE /api/v1/projects/{projectId}/documents/{documentId}`
+- `POST /api/v1/projects/{projectId}/processing`
 
 ## Test
 
@@ -88,13 +91,6 @@ npm run test
 npm run build
 ```
 
-## Tài liệu chính
+## Contract
 
-- Sprint 1 contract: `contracts/sprint-1-api.yaml`
-- Sprint 2 contract: `contracts/sprint-2-api.yaml`
-- Sprint 1 plan: `docs/sprints/sprint-1-plan.md`
-- Sprint 1 board: `docs/sprints/sprint-1-board.md`
-- Sprint 1 implementation notes: `docs/sprints/sprint-1-implementation-notes.md`
-- Sprint 2 plan: `docs/sprints/sprint-2-plan.md`
-- Sprint 2 board: `docs/sprints/sprint-2-board.md`
-- Definition of Done: `docs/sprints/definition-of-done.md`
+- API hiện tại: `contracts/sprint-2-api.yaml`

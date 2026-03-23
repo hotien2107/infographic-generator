@@ -20,8 +20,15 @@ import (
 )
 
 type projectService interface {
-	CreateProject(ctx context.Context, title string, inputMode projects.InputMode) (projects.Project, error)
+	DashboardSummary(ctx context.Context) (projects.DashboardSummary, error)
+	ListProjects(ctx context.Context) ([]projects.ProjectListItem, error)
+	CreateProject(ctx context.Context, title, description string, inputMode projects.InputMode) (projects.Project, error)
 	GetProject(ctx context.Context, projectID string) (projects.Project, []documents.Document, error)
+	UpdateProject(ctx context.Context, projectID string, update projects.ProjectUpdate) (projects.Project, error)
+	DeleteProject(ctx context.Context, projectID string) error
+	ListDocuments(ctx context.Context, projectID string) ([]documents.Document, error)
+	UpdateDocument(ctx context.Context, projectID, documentID, filename string) (documents.Document, error)
+	DeleteDocument(ctx context.Context, projectID, documentID string) error
 	UploadDocument(ctx context.Context, projectID, originalFilename string, fileHeader *multipart.FileHeader) (projects.Project, documents.Document, error)
 	TriggerProcessing(ctx context.Context, projectID string) (projects.Project, documents.Document, error)
 }
@@ -45,8 +52,46 @@ type ErrorDetail struct {
 }
 
 type createProjectRequest struct {
-	Title     string `json:"title"`
-	InputMode string `json:"input_mode"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	InputMode   string `json:"input_mode"`
+}
+
+type updateProjectRequest struct {
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+	InputMode   *string `json:"input_mode"`
+}
+
+type updateDocumentRequest struct {
+	Filename *string `json:"filename"`
+}
+
+type projectResponse struct {
+	ID                string                     `json:"id"`
+	Title             string                     `json:"title"`
+	Description       string                     `json:"description"`
+	InputMode         projects.InputMode         `json:"input_mode"`
+	Status            projects.Status            `json:"status"`
+	DocumentCount     int                        `json:"document_count"`
+	CreatedAt         time.Time                  `json:"created_at"`
+	UpdatedAt         time.Time                  `json:"updated_at"`
+	ProcessingSummary projects.ProcessingSummary `json:"processing_summary,omitempty"`
+}
+
+type documentResponse struct {
+	ID                   string           `json:"id"`
+	ProjectID            string           `json:"project_id"`
+	Filename             string           `json:"filename"`
+	MimeType             string           `json:"mime_type"`
+	SizeBytes            int64            `json:"size_bytes"`
+	Status               documents.Status `json:"status"`
+	ProcessingStartedAt  *time.Time       `json:"processing_started_at"`
+	ProcessingFinishedAt *time.Time       `json:"processing_finished_at"`
+	ErrorMessage         *string          `json:"error_message"`
+	ExtractedTextPreview *string          `json:"extracted_text_preview"`
+	CreatedAt            time.Time        `json:"created_at"`
+	UpdatedAt            time.Time        `json:"updated_at"`
 }
 
 func New(cfg config.Config, store projects.Store, blobStorage storage.BlobStorage, service projectService) *App {
@@ -83,24 +128,50 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects" {
-		a.createProject(w, r)
+	if r.Method == http.MethodGet && r.URL.Path == "/api/v1/dashboard/summary" {
+		a.getDashboardSummary(w, r)
 		return
 	}
 
+	if r.URL.Path == "/api/v1/projects" {
+		switch r.Method {
+		case http.MethodGet:
+			a.listProjects(w, r)
+			return
+		case http.MethodPost:
+			a.createProject(w, r)
+			return
+		}
+	}
+
 	if strings.HasPrefix(r.URL.Path, "/api/v1/projects/") {
-		tail := strings.TrimPrefix(r.URL.Path, "/api/v1/projects/")
-		parts := strings.Split(strings.Trim(tail, "/"), "/")
-		if len(parts) == 1 && r.Method == http.MethodGet {
+		tail := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/projects/"), "/")
+		parts := strings.Split(tail, "/")
+
+		switch {
+		case len(parts) == 1 && r.Method == http.MethodGet:
 			a.getProject(w, r, parts[0])
 			return
-		}
-		if len(parts) == 2 && parts[1] == "documents" && r.Method == http.MethodPost {
+		case len(parts) == 1 && r.Method == http.MethodPatch:
+			a.updateProject(w, r, parts[0])
+			return
+		case len(parts) == 1 && r.Method == http.MethodDelete:
+			a.deleteProject(w, r, parts[0])
+			return
+		case len(parts) == 2 && parts[1] == "documents" && r.Method == http.MethodGet:
+			a.listDocuments(w, r, parts[0])
+			return
+		case len(parts) == 2 && parts[1] == "documents" && r.Method == http.MethodPost:
 			a.uploadDocument(w, r, parts[0])
 			return
-		}
-		if len(parts) == 2 && parts[1] == "processing" && r.Method == http.MethodPost {
+		case len(parts) == 2 && parts[1] == "processing" && r.Method == http.MethodPost:
 			a.triggerProcessing(w, r, parts[0])
+			return
+		case len(parts) == 3 && parts[1] == "documents" && r.Method == http.MethodPatch:
+			a.updateDocument(w, r, parts[0], parts[2])
+			return
+		case len(parts) == 3 && parts[1] == "documents" && r.Method == http.MethodDelete:
+			a.deleteDocument(w, r, parts[0], parts[2])
 			return
 		}
 	}
@@ -110,6 +181,31 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"error": ErrorDetail{Code: "ROUTE_NOT_FOUND", Message: "route not found", Field: nil},
 		"meta":  meta(utils.NewUUID()),
 	})
+}
+
+func (a *App) getDashboardSummary(w http.ResponseWriter, r *http.Request) {
+	requestID := utils.NewUUID()
+	summary, err := a.service.DashboardSummary(r.Context())
+	if err != nil {
+		a.writeError(w, http.StatusInternalServerError, requestID, "PERSISTENCE_ERROR", "failed to query persistent storage", nil)
+		return
+	}
+	a.writeJSON(w, http.StatusOK, envelope(summary, nil, meta(requestID)))
+}
+
+func (a *App) listProjects(w http.ResponseWriter, r *http.Request) {
+	requestID := utils.NewUUID()
+	items, err := a.service.ListProjects(r.Context())
+	if err != nil {
+		a.writeError(w, http.StatusInternalServerError, requestID, "PERSISTENCE_ERROR", "failed to query persistent storage", nil)
+		return
+	}
+
+	response := make([]projectResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, serializeProjectListItem(item))
+	}
+	a.writeJSON(w, http.StatusOK, envelope(response, nil, meta(requestID)))
 }
 
 func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
@@ -130,20 +226,27 @@ func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inputMode := projects.InputMode(payload.InputMode)
-	if inputMode != projects.InputModeFile && inputMode != projects.InputModeText {
+	description := strings.TrimSpace(payload.Description)
+	if len(description) > 280 {
+		field := "description"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "description must be 280 characters or fewer", &field)
+		return
+	}
+
+	inputMode, ok := parseInputMode(payload.InputMode)
+	if !ok {
 		field := "input_mode"
 		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "input_mode must be one of: file, text", &field)
 		return
 	}
 
-	project, err := a.service.CreateProject(r.Context(), title, inputMode)
+	project, err := a.service.CreateProject(r.Context(), title, description, inputMode)
 	if err != nil {
 		a.writeError(w, http.StatusInternalServerError, requestID, "PROJECT_CREATE_FAILED", "failed to persist project", nil)
 		return
 	}
 
-	a.writeJSON(w, http.StatusCreated, envelope(project, nil, meta(requestID)))
+	a.writeJSON(w, http.StatusCreated, envelope(serializeProject(project, 0, false), nil, meta(requestID)))
 }
 
 func (a *App) getProject(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -162,16 +265,164 @@ func (a *App) getProject(w http.ResponseWriter, r *http.Request, projectID strin
 	}
 
 	a.writeJSON(w, http.StatusOK, envelope(map[string]any{
-		"id":                 project.ID,
-		"title":              project.Title,
-		"input_mode":         project.InputMode,
-		"status":             project.Status,
-		"current_step":       project.CurrentStep,
-		"processing_summary": project.ProcessingSummary,
-		"documents":          docs,
-		"created_at":         project.CreatedAt,
-		"updated_at":         project.UpdatedAt,
+		"project":   serializeProject(project, len(docs), true),
+		"documents": serializeDocuments(docs),
 	}, nil, meta(requestID)))
+}
+
+func (a *App) updateProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	requestID := utils.NewUUID()
+	if !utils.IsUUID(projectID) {
+		field := "projectId"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "projectId must be a valid UUID", &field)
+		return
+	}
+	defer r.Body.Close()
+
+	var payload updateProjectRequest
+	if err := decodeStrictJSON(r, &payload); err != nil {
+		field := "body"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", err.Error(), &field)
+		return
+	}
+
+	if payload.Title == nil && payload.Description == nil && payload.InputMode == nil {
+		field := "body"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "at least one field must be provided", &field)
+		return
+	}
+
+	update := projects.ProjectUpdate{}
+	if payload.Title != nil {
+		title := strings.TrimSpace(*payload.Title)
+		if len(title) < 3 || len(title) > 120 {
+			field := "title"
+			a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "title must be between 3 and 120 characters", &field)
+			return
+		}
+		update.Title = &title
+	}
+	if payload.Description != nil {
+		description := strings.TrimSpace(*payload.Description)
+		if len(description) > 280 {
+			field := "description"
+			a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "description must be 280 characters or fewer", &field)
+			return
+		}
+		update.Description = &description
+	}
+	if payload.InputMode != nil {
+		inputMode, ok := parseInputMode(*payload.InputMode)
+		if !ok {
+			field := "input_mode"
+			a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "input_mode must be one of: file, text", &field)
+			return
+		}
+		update.InputMode = &inputMode
+	}
+
+	project, err := a.service.UpdateProject(r.Context(), projectID, update)
+	if err != nil {
+		status, code, message := mapDomainError(err)
+		a.writeError(w, status, requestID, code, message, nil)
+		return
+	}
+
+	docs, docsErr := a.service.ListDocuments(r.Context(), projectID)
+	if docsErr != nil {
+		a.writeError(w, http.StatusInternalServerError, requestID, "PERSISTENCE_ERROR", "failed to query persistent storage", nil)
+		return
+	}
+	project.ProcessingSummary = projects.ProcessingSummary(project.ProcessingSummary)
+	a.writeJSON(w, http.StatusOK, envelope(serializeProject(project, len(docs), true), nil, meta(requestID)))
+}
+
+func (a *App) deleteProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	requestID := utils.NewUUID()
+	if !utils.IsUUID(projectID) {
+		field := "projectId"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "projectId must be a valid UUID", &field)
+		return
+	}
+
+	if err := a.service.DeleteProject(r.Context(), projectID); err != nil {
+		status, code, message := mapDomainError(err)
+		a.writeError(w, status, requestID, code, message, nil)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, envelope(map[string]string{"id": projectID}, nil, meta(requestID)))
+}
+
+func (a *App) listDocuments(w http.ResponseWriter, r *http.Request, projectID string) {
+	requestID := utils.NewUUID()
+	if !utils.IsUUID(projectID) {
+		field := "projectId"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "projectId must be a valid UUID", &field)
+		return
+	}
+
+	docs, err := a.service.ListDocuments(r.Context(), projectID)
+	if err != nil {
+		status, code, message := mapDomainError(err)
+		a.writeError(w, status, requestID, code, message, nil)
+		return
+	}
+	a.writeJSON(w, http.StatusOK, envelope(serializeDocuments(docs), nil, meta(requestID)))
+}
+
+func (a *App) updateDocument(w http.ResponseWriter, r *http.Request, projectID, documentID string) {
+	requestID := utils.NewUUID()
+	if !utils.IsUUID(projectID) || !utils.IsUUID(documentID) {
+		field := "documentId"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "projectId and documentId must be valid UUIDs", &field)
+		return
+	}
+	defer r.Body.Close()
+
+	var payload updateDocumentRequest
+	if err := decodeStrictJSON(r, &payload); err != nil {
+		field := "body"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", err.Error(), &field)
+		return
+	}
+	if payload.Filename == nil {
+		field := "filename"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "filename is required", &field)
+		return
+	}
+	filename := strings.TrimSpace(*payload.Filename)
+	if len(filename) < 3 || len(filename) > 180 {
+		field := "filename"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "filename must be between 3 and 180 characters", &field)
+		return
+	}
+
+	document, err := a.service.UpdateDocument(r.Context(), projectID, documentID, filename)
+	if err != nil {
+		status, code, message := mapDomainError(err)
+		a.writeError(w, status, requestID, code, message, nil)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, envelope(serializeDocument(document), nil, meta(requestID)))
+}
+
+func (a *App) deleteDocument(w http.ResponseWriter, r *http.Request, projectID, documentID string) {
+	requestID := utils.NewUUID()
+	if !utils.IsUUID(projectID) || !utils.IsUUID(documentID) {
+		field := "documentId"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "projectId and documentId must be valid UUIDs", &field)
+		return
+	}
+
+	if err := a.service.DeleteDocument(r.Context(), projectID, documentID); err != nil {
+		status, code, message := mapDomainError(err)
+		a.writeError(w, status, requestID, code, message, nil)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, envelope(map[string]string{"id": documentID}, nil, meta(requestID)))
 }
 
 func (a *App) uploadDocument(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -197,8 +448,8 @@ func (a *App) uploadDocument(w http.ResponseWriter, r *http.Request, projectID s
 	}
 
 	a.writeJSON(w, http.StatusAccepted, envelope(map[string]any{
-		"project":  project,
-		"document": document,
+		"project":  serializeProject(project, project.ProcessingSummary.TotalDocuments, true),
+		"document": serializeDocument(document),
 	}, nil, meta(requestID)))
 }
 
@@ -218,8 +469,8 @@ func (a *App) triggerProcessing(w http.ResponseWriter, r *http.Request, projectI
 	}
 
 	a.writeJSON(w, http.StatusAccepted, envelope(map[string]any{
-		"project":  project,
-		"document": document,
+		"project":  serializeProject(project, project.ProcessingSummary.TotalDocuments, true),
+		"document": serializeDocument(document),
 	}, nil, meta(requestID)))
 }
 
@@ -279,7 +530,7 @@ func envelope(data any, err *ErrorDetail, meta Meta) map[string]any {
 
 func (a *App) applyCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 }
 
@@ -375,4 +626,56 @@ func mapDomainError(err error) (status int, code, message string) {
 	default:
 		return http.StatusInternalServerError, "PERSISTENCE_ERROR", "failed to query persistent storage"
 	}
+}
+
+func parseInputMode(value string) (projects.InputMode, bool) {
+	inputMode := projects.InputMode(strings.TrimSpace(value))
+	return inputMode, inputMode == projects.InputModeFile || inputMode == projects.InputModeText
+}
+
+func serializeProject(project projects.Project, documentCount int, includeSummary bool) projectResponse {
+	response := projectResponse{
+		ID:            project.ID,
+		Title:         project.Title,
+		Description:   project.Description,
+		InputMode:     project.InputMode,
+		Status:        project.Status,
+		DocumentCount: documentCount,
+		CreatedAt:     project.CreatedAt,
+		UpdatedAt:     project.UpdatedAt,
+	}
+	if includeSummary {
+		response.ProcessingSummary = project.ProcessingSummary
+	}
+	return response
+}
+
+func serializeProjectListItem(item projects.ProjectListItem) projectResponse {
+	response := serializeProject(item.Project, item.DocumentCount, false)
+	return response
+}
+
+func serializeDocument(document documents.Document) documentResponse {
+	return documentResponse{
+		ID:                   document.ID,
+		ProjectID:            document.ProjectID,
+		Filename:             document.Filename,
+		MimeType:             document.MimeType,
+		SizeBytes:            document.SizeBytes,
+		Status:               document.Status,
+		ProcessingStartedAt:  document.ProcessingStartedAt,
+		ProcessingFinishedAt: document.ProcessingFinishedAt,
+		ErrorMessage:         document.ErrorMessage,
+		ExtractedTextPreview: document.ExtractedTextPreview,
+		CreatedAt:            document.CreatedAt,
+		UpdatedAt:            document.UpdatedAt,
+	}
+}
+
+func serializeDocuments(items []documents.Document) []documentResponse {
+	response := make([]documentResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, serializeDocument(item))
+	}
+	return response
 }

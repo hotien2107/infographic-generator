@@ -1,26 +1,17 @@
 export const projectStatusLabels = {
-  draft: 'Draft',
-  uploaded: 'Uploaded',
-  processing: 'Processing',
-  processed: 'Processed',
-  failed: 'Failed',
+  draft: 'Bản nháp',
+  uploaded: 'Đã thêm tài liệu',
+  processing: 'Đang xử lý',
+  processed: 'Hoàn tất',
+  failed: 'Cần chú ý',
 }
 
 export const documentStatusLabels = {
-  uploaded: 'Uploaded',
-  queued: 'Queued',
-  processing: 'Processing',
-  processed: 'Processed',
-  failed: 'Failed',
-}
-
-export const stepLabels = {
-  waiting_for_upload: 'Waiting for upload',
-  uploaded: 'Uploaded',
-  queued_for_processing: 'Queued for processing',
-  extracting: 'Extracting',
-  ready_for_generation: 'Ready for generation',
-  failed: 'Failed',
+  uploaded: 'Đã tải lên',
+  queued: 'Đang chờ xử lý',
+  processing: 'Đang xử lý',
+  processed: 'Hoàn tất',
+  failed: 'Cần kiểm tra',
 }
 
 export function badgeVariantForStatus(status) {
