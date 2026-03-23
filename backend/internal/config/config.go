@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -20,6 +21,10 @@ type Config struct {
 	MultipartThresholdMB  int64
 	MultipartPartSizeMB   uint64
 	MinIOAutoCreateBucket bool
+	AutoProcessDocuments  bool
+	ProcessingQueueBuffer int
+	ProcessingStepDelay   time.Duration
+	ProcessingFailPattern string
 }
 
 func Load() Config {
@@ -37,6 +42,10 @@ func Load() Config {
 		MultipartThresholdMB:  getEnvAsInt64("MINIO_MULTIPART_THRESHOLD_MB", 16),
 		MultipartPartSizeMB:   getEnvAsUint64("MINIO_MULTIPART_PART_SIZE_MB", 8),
 		MinIOAutoCreateBucket: getEnvAsBool("MINIO_AUTO_CREATE_BUCKET", true),
+		AutoProcessDocuments:  getEnvAsBool("AUTO_PROCESS_DOCUMENTS", true),
+		ProcessingQueueBuffer: getEnvAsInt("PROCESSING_QUEUE_BUFFER", 16),
+		ProcessingStepDelay:   time.Duration(getEnvAsInt("PROCESSING_STEP_DELAY_MS", 400)) * time.Millisecond,
+		ProcessingFailPattern: strings.ToLower(getEnv("PROCESSING_FAIL_PATTERN", "fail")),
 	}
 }
 

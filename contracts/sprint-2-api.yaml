@@ -1,12 +1,11 @@
 openapi: 3.1.0
 info:
-  title: AI Infographic Generator Sprint 1 API Contract
-  version: 1.1.0
-  summary: Contract chuẩn cho các flow nền tảng Sprint 1, đã được harden để giữ đồng bộ với implementation hiện tại.
+  title: AI Infographic Generator Sprint 2 API Contract
+  version: 2.0.0
+  summary: Contract cho document ingestion + processing lifecycle giả lập.
   description: |
-    Sprint 1 tập trung vào create project, get project detail và upload document.
-    Để tránh lệch contract với implementation hiện tại, các schema bên dưới giữ nguyên envelope format
-    và mở rộng enum/metadata cần thiết để vẫn tương thích với trạng thái xử lý được bổ sung ở Sprint 2.
+    Sprint 2 mở rộng từ flow upload tài liệu của Sprint 1 để tạo nền tảng cho AI pipeline.
+    Backend giữ response envelope thống nhất: { data, error, meta }.
 servers:
   - url: http://localhost:8080
     description: Local development server
@@ -14,6 +13,7 @@ servers:
 tags:
   - name: Projects
   - name: Documents
+  - name: Processing
 
 paths:
   /api/v1/projects:
@@ -35,16 +35,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProjectEnvelope'
         '400':
-          description: Dữ liệu không hợp lệ
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/projects/{projectId}:
     get:
       tags: [Projects]
-      summary: Lấy chi tiết project và danh sách document
+      summary: Lấy chi tiết project, tài liệu và processing summary
       operationId: getProjectById
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -56,22 +52,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProjectDetailEnvelope'
         '400':
-          description: Project ID không hợp lệ
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
+          $ref: '#/components/responses/ValidationError'
         '404':
-          description: Không tìm thấy project
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
+          $ref: '#/components/responses/ProjectNotFound'
 
   /api/v1/projects/{projectId}/documents:
     post:
       tags: [Documents]
-      summary: Upload tài liệu đầu vào cho project
+      summary: Upload tài liệu và tự động đưa vào luồng xử lý nếu bật auto-processing
       operationId: uploadProjectDocument
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -87,15 +75,34 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DocumentEnvelope'
+                $ref: '#/components/schemas/ProcessingEnvelope'
         '400':
-          description: File không hợp lệ hoặc thiếu dữ liệu
+          description: File không hợp lệ hoặc multipart không hợp lệ
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '404':
-          description: Không tìm thấy project
+          $ref: '#/components/responses/ProjectNotFound'
+
+  /api/v1/projects/{projectId}/processing:
+    post:
+      tags: [Processing]
+      summary: Đưa document mới nhất vào queue xử lý thủ công
+      operationId: triggerProjectProcessing
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '202':
+          description: Enqueue processing thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Không tìm thấy project hoặc document
           content:
             application/json:
               schema:
@@ -107,10 +114,23 @@ components:
       name: projectId
       in: path
       required: true
-      description: Định danh project theo UUID.
       schema:
         type: string
         format: uuid
+
+  responses:
+    ValidationError:
+      description: Dữ liệu không hợp lệ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ProjectNotFound:
+      description: Project không tồn tại
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
 
   schemas:
     EnvelopeMeta:
@@ -196,22 +216,16 @@ components:
       properties:
         total_documents:
           type: integer
-          minimum: 0
         uploaded_documents:
           type: integer
-          minimum: 0
         queued_documents:
           type: integer
-          minimum: 0
         processing_documents:
           type: integer
-          minimum: 0
         processed_documents:
           type: integer
-          minimum: 0
         failed_documents:
           type: integer
-          minimum: 0
         last_processed_at:
           type:
             - string
@@ -264,29 +278,6 @@ components:
         - processing_summary
         - created_at
         - updated_at
-
-    ProjectDetailResponse:
-      allOf:
-        - $ref: '#/components/schemas/Project'
-        - type: object
-          additionalProperties: false
-          properties:
-            documents:
-              type: array
-              items:
-                $ref: '#/components/schemas/Document'
-          required: [documents]
-
-    UploadDocumentRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        file:
-          type: string
-          format: binary
-        original_filename:
-          type: string
-      required: [file]
 
     Document:
       type: object
@@ -352,7 +343,30 @@ components:
         - created_at
         - updated_at
 
-    UploadDocumentResponse:
+    ProjectDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Project'
+        - type: object
+          additionalProperties: false
+          properties:
+            documents:
+              type: array
+              items:
+                $ref: '#/components/schemas/Document'
+          required: [documents]
+
+    UploadDocumentRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        file:
+          type: string
+          format: binary
+        original_filename:
+          type: string
+      required: [file]
+
+    ProcessingResponse:
       type: object
       additionalProperties: false
       properties:
@@ -386,12 +400,12 @@ components:
           $ref: '#/components/schemas/EnvelopeMeta'
       required: [data, error, meta]
 
-    DocumentEnvelope:
+    ProcessingEnvelope:
       type: object
       additionalProperties: false
       properties:
         data:
-          $ref: '#/components/schemas/UploadDocumentResponse'
+          $ref: '#/components/schemas/ProcessingResponse'
         error:
           type: 'null'
         meta:

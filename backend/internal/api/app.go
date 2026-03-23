@@ -1,8 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -15,10 +19,18 @@ import (
 	"infographic-generator/backend/internal/utils"
 )
 
+type projectService interface {
+	CreateProject(ctx context.Context, title string, inputMode projects.InputMode) (projects.Project, error)
+	GetProject(ctx context.Context, projectID string) (projects.Project, []documents.Document, error)
+	UploadDocument(ctx context.Context, projectID, originalFilename string, fileHeader *multipart.FileHeader) (projects.Project, documents.Document, error)
+	TriggerProcessing(ctx context.Context, projectID string) (projects.Project, documents.Document, error)
+}
+
 type App struct {
-	config  config.Config
-	store   projects.Store
-	storage storage.BlobStorage
+	config       config.Config
+	projectStore projects.Store
+	storage      storage.BlobStorage
+	service      projectService
 }
 
 type Meta struct {
@@ -37,17 +49,18 @@ type createProjectRequest struct {
 	InputMode string `json:"input_mode"`
 }
 
-func New(cfg config.Config, store projects.Store, blobStorage storage.BlobStorage) *App {
+func New(cfg config.Config, store projects.Store, blobStorage storage.BlobStorage, service projectService) *App {
 	return &App{
-		config:  cfg,
-		store:   store,
-		storage: blobStorage,
+		config:       cfg,
+		projectStore: store,
+		storage:      blobStorage,
+		service:      service,
 	}
 }
 
 func (a *App) Close() {
-	if a.store != nil {
-		a.store.Close()
+	if a.projectStore != nil {
+		a.projectStore.Close()
 	}
 	if a.storage != nil {
 		_ = a.storage.Close()
@@ -86,11 +99,15 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			a.uploadDocument(w, r, parts[0])
 			return
 		}
+		if len(parts) == 2 && parts[1] == "processing" && r.Method == http.MethodPost {
+			a.triggerProcessing(w, r, parts[0])
+			return
+		}
 	}
 
 	a.writeJSON(w, http.StatusNotFound, map[string]any{
 		"data":  nil,
-		"error": ErrorDetail{Code: "PROJECT_NOT_FOUND", Message: "route not found", Field: nil},
+		"error": ErrorDetail{Code: "ROUTE_NOT_FOUND", Message: "route not found", Field: nil},
 		"meta":  meta(utils.NewUUID()),
 	})
 }
@@ -100,8 +117,9 @@ func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var payload createProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "invalid JSON payload", nil)
+	if err := decodeStrictJSON(r, &payload); err != nil {
+		field := "body"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", err.Error(), &field)
 		return
 	}
 
@@ -119,17 +137,13 @@ func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	project, err := a.store.CreateProject(r.Context(), title, inputMode)
+	project, err := a.service.CreateProject(r.Context(), title, inputMode)
 	if err != nil {
 		a.writeError(w, http.StatusInternalServerError, requestID, "PROJECT_CREATE_FAILED", "failed to persist project", nil)
 		return
 	}
 
-	a.writeJSON(w, http.StatusCreated, map[string]any{
-		"data":  project,
-		"error": nil,
-		"meta":  meta(requestID),
-	})
+	a.writeJSON(w, http.StatusCreated, envelope(project, nil, meta(requestID)))
 }
 
 func (a *App) getProject(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -140,27 +154,24 @@ func (a *App) getProject(w http.ResponseWriter, r *http.Request, projectID strin
 		return
 	}
 
-	project, docs, err := a.store.GetProject(r.Context(), projectID)
+	project, docs, err := a.service.GetProject(r.Context(), projectID)
 	if err != nil {
-		status, code, message := mapStoreError(err)
+		status, code, message := mapDomainError(err)
 		a.writeError(w, status, requestID, code, message, nil)
 		return
 	}
 
-	a.writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"id":           project.ID,
-			"title":        project.Title,
-			"input_mode":   project.InputMode,
-			"status":       project.Status,
-			"current_step": project.CurrentStep,
-			"documents":    docs,
-			"created_at":   project.CreatedAt,
-			"updated_at":   project.UpdatedAt,
-		},
-		"error": nil,
-		"meta":  meta(requestID),
-	})
+	a.writeJSON(w, http.StatusOK, envelope(map[string]any{
+		"id":                 project.ID,
+		"title":              project.Title,
+		"input_mode":         project.InputMode,
+		"status":             project.Status,
+		"current_step":       project.CurrentStep,
+		"processing_summary": project.ProcessingSummary,
+		"documents":          docs,
+		"created_at":         project.CreatedAt,
+		"updated_at":         project.UpdatedAt,
+	}, nil, meta(requestID)))
 }
 
 func (a *App) uploadDocument(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -171,80 +182,81 @@ func (a *App) uploadDocument(w http.ResponseWriter, r *http.Request, projectID s
 		return
 	}
 
-	if err := r.ParseMultipartForm(int64(a.config.MaxUploadSizeMB+1) * 1024 * 1024); err != nil {
-		field := "file"
-		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "invalid multipart form payload", &field)
-		return
-	}
-
-	file, fileHeader, err := r.FormFile("file")
+	fileHeader, originalFilename, err := a.validateUploadRequest(r)
 	if err != nil {
-		field := "file"
-		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "file is required", &field)
-		return
-	}
-	_ = file.Close()
-
-	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileHeader.Filename)), ".")
-	if !contains(a.config.AllowedFileTypes, ext) {
-		field := "file"
-		a.writeError(w, http.StatusBadRequest, requestID, "INVALID_FILE_TYPE", fmt.Sprintf("file type .%s is not allowed", ext), &field)
+		status, code, field, message := mapUploadError(err, a.config.MaxUploadSizeMB)
+		a.writeError(w, status, requestID, code, message, &field)
 		return
 	}
 
-	if fileHeader.Size <= 0 {
-		field := "file"
-		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "file must not be empty", &field)
-		return
-	}
-
-	maxBytes := int64(a.config.MaxUploadSizeMB) * 1024 * 1024
-	if fileHeader.Size > maxBytes {
-		field := "file"
-		a.writeError(w, http.StatusBadRequest, requestID, "FILE_TOO_LARGE", fmt.Sprintf("file exceeds %d MB", a.config.MaxUploadSizeMB), &field)
-		return
-	}
-
-	storageKey, err := a.storage.Save(r.Context(), fileHeader)
+	project, document, err := a.service.UploadDocument(r.Context(), projectID, originalFilename, fileHeader)
 	if err != nil {
-		a.writeError(w, http.StatusInternalServerError, requestID, "DOCUMENT_STORAGE_FAILED", "failed to persist uploaded file", nil)
-		return
-	}
-
-	document := documents.Document{
-		ID:         utils.NewUUID(),
-		ProjectID:  projectID,
-		Filename:   firstNonEmpty(strings.TrimSpace(r.FormValue("original_filename")), fileHeader.Filename),
-		MimeType:   mimeTypeForExtension(ext),
-		SizeBytes:  fileHeader.Size,
-		StorageKey: storageKey,
-		Status:     documents.StatusUploaded,
-		CreatedAt:  time.Now().UTC(),
-	}
-
-	project, _, err := a.store.AddDocument(r.Context(), projectID, document)
-	if err != nil {
-		status, code, message := mapStoreError(err)
+		status, code, message := mapDomainError(err)
 		a.writeError(w, status, requestID, code, message, nil)
 		return
 	}
 
-	a.writeJSON(w, http.StatusAccepted, map[string]any{
-		"data": map[string]any{
-			"project":  project,
-			"document": document,
-		},
-		"error": nil,
-		"meta":  meta(requestID),
-	})
+	a.writeJSON(w, http.StatusAccepted, envelope(map[string]any{
+		"project":  project,
+		"document": document,
+	}, nil, meta(requestID)))
+}
+
+func (a *App) triggerProcessing(w http.ResponseWriter, r *http.Request, projectID string) {
+	requestID := utils.NewUUID()
+	if !utils.IsUUID(projectID) {
+		field := "projectId"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "projectId must be a valid UUID", &field)
+		return
+	}
+
+	project, document, err := a.service.TriggerProcessing(r.Context(), projectID)
+	if err != nil {
+		status, code, message := mapDomainError(err)
+		a.writeError(w, status, requestID, code, message, nil)
+		return
+	}
+
+	a.writeJSON(w, http.StatusAccepted, envelope(map[string]any{
+		"project":  project,
+		"document": document,
+	}, nil, meta(requestID)))
+}
+
+func (a *App) validateUploadRequest(r *http.Request) (*multipart.FileHeader, string, error) {
+	if err := r.ParseMultipartForm(int64(a.config.MaxUploadSizeMB+1) * 1024 * 1024); err != nil {
+		return nil, "", errInvalidMultipart
+	}
+	if r.MultipartForm == nil {
+		return nil, "", errInvalidMultipart
+	}
+	if err := validateMultipartFields(r.MultipartForm); err != nil {
+		return nil, "", err
+	}
+
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		return nil, "", errMissingFile
+	}
+	_ = file.Close()
+
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileHeader.Filename)), ".")
+	if ext == "" || !contains(a.config.AllowedFileTypes, ext) {
+		return nil, "", fmt.Errorf("%w:%s", errInvalidFileType, ext)
+	}
+	if fileHeader.Size <= 0 {
+		return nil, "", errEmptyFile
+	}
+	maxBytes := int64(a.config.MaxUploadSizeMB) * 1024 * 1024
+	if fileHeader.Size > maxBytes {
+		return nil, "", errFileTooLarge
+	}
+
+	return fileHeader, strings.TrimSpace(r.FormValue("original_filename")), nil
 }
 
 func (a *App) writeError(w http.ResponseWriter, status int, requestID, code, message string, field *string) {
-	a.writeJSON(w, status, map[string]any{
-		"data":  nil,
-		"error": ErrorDetail{Code: code, Message: message, Field: field},
-		"meta":  meta(requestID),
-	})
+	a.writeJSON(w, status, envelope(nil, &ErrorDetail{Code: code, Message: message, Field: field}, meta(requestID)))
 }
 
 func (a *App) writeJSON(w http.ResponseWriter, status int, payload any) {
@@ -255,6 +267,14 @@ func (a *App) writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func meta(requestID string) Meta {
 	return Meta{RequestID: requestID, Timestamp: time.Now().UTC()}
+}
+
+func envelope(data any, err *ErrorDetail, meta Meta) map[string]any {
+	return map[string]any{
+		"data":  data,
+		"error": err,
+		"meta":  meta,
+	}
 }
 
 func (a *App) applyCORS(w http.ResponseWriter) {
@@ -272,32 +292,87 @@ func contains(items []string, target string) bool {
 	return false
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
+func decodeStrictJSON(r *http.Request, dst any) error {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return normalizeJSONError(err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return errors.New("request body must contain a single JSON object")
+	}
+	return nil
+}
+
+func normalizeJSONError(err error) error {
+	if strings.Contains(err.Error(), "unknown field") {
+		return fmt.Errorf("request body contains unknown field")
+	}
+	return errors.New("invalid JSON payload")
+}
+
+var (
+	errInvalidMultipart = errors.New("invalid multipart form payload")
+	errMissingFile      = errors.New("file is required")
+	errInvalidFileType  = errors.New("invalid file type")
+	errFileTooLarge     = errors.New("file exceeds maximum upload size")
+	errEmptyFile        = errors.New("file must not be empty")
+	errUnknownFormField = errors.New("multipart form contains unsupported field")
+)
+
+func validateMultipartFields(form *multipart.Form) error {
+	allowedValues := map[string]bool{"original_filename": true}
+	allowedFiles := map[string]bool{"file": true}
+	for key := range form.Value {
+		if !allowedValues[key] {
+			return fmt.Errorf("%w: %s", errUnknownFormField, key)
 		}
 	}
-	return ""
+	for key, entries := range form.File {
+		if !allowedFiles[key] {
+			return fmt.Errorf("%w: %s", errUnknownFormField, key)
+		}
+		if key == "file" && len(entries) != 1 {
+			return errInvalidMultipart
+		}
+	}
+	return nil
 }
 
-func mimeTypeForExtension(extension string) string {
-	switch extension {
-	case "pdf":
-		return "application/pdf"
-	case "docx":
-		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+func mapUploadError(err error, maxUploadSizeMB int) (status int, code string, field string, message string) {
+	field = "file"
+	switch {
+	case errors.Is(err, errInvalidMultipart):
+		return http.StatusBadRequest, "VALIDATION_ERROR", field, "invalid multipart form payload"
+	case errors.Is(err, errMissingFile):
+		return http.StatusBadRequest, "VALIDATION_ERROR", field, "file is required"
+	case errors.Is(err, errEmptyFile):
+		return http.StatusBadRequest, "VALIDATION_ERROR", field, "file must not be empty"
+	case errors.Is(err, errFileTooLarge):
+		return http.StatusBadRequest, "FILE_TOO_LARGE", field, fmt.Sprintf("file exceeds %d MB", maxUploadSizeMB)
+	case errors.Is(err, errUnknownFormField):
+		return http.StatusBadRequest, "VALIDATION_ERROR", field, "multipart form contains unsupported field"
+	case strings.Contains(err.Error(), errInvalidFileType.Error()):
+		ext := strings.TrimPrefix(strings.TrimPrefix(err.Error(), errInvalidFileType.Error()+":"), ".")
+		if ext == "" {
+			return http.StatusBadRequest, "INVALID_FILE_TYPE", field, "file type is not allowed"
+		}
+		return http.StatusBadRequest, "INVALID_FILE_TYPE", field, fmt.Sprintf("file type .%s is not allowed", ext)
 	default:
-		return "text/plain"
+		return http.StatusBadRequest, "VALIDATION_ERROR", field, err.Error()
 	}
 }
 
-func mapStoreError(err error) (status int, code, message string) {
-	if err == nil {
+func mapDomainError(err error) (status int, code, message string) {
+	switch {
+	case err == nil:
 		return http.StatusOK, "", ""
-	}
-	if err == projects.ErrProjectNotFound {
+	case errors.Is(err, projects.ErrProjectNotFound):
 		return http.StatusNotFound, "PROJECT_NOT_FOUND", "project not found"
+	case errors.Is(err, projects.ErrDocumentNotFound), errors.Is(err, projects.ErrNoDocumentsForProject):
+		return http.StatusNotFound, "DOCUMENT_NOT_FOUND", "document not found"
+	default:
+		return http.StatusInternalServerError, "PERSISTENCE_ERROR", "failed to query persistent storage"
 	}
-	return http.StatusInternalServerError, "PERSISTENCE_ERROR", "failed to query persistent storage"
 }
