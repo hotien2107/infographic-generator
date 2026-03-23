@@ -8,3 +8,7 @@ Dự án tập trung vào ba năng lực cốt lõi:
 - tạo ra infographic dễ đọc, dễ chia sẻ và có giá trị sử dụng thực tế.
 
 Repository này hiện đóng vai trò tài liệu nền tảng cho định hướng sản phẩm, kiến trúc hệ thống và lộ trình triển khai MVP của dự án.
+
+## Bộ tài liệu sprint
+
+Các tài liệu quản trị sprint và backlog triển khai được đặt tại thư mục `docs/sprints/`, bao gồm backlog tổng, Definition of Done, sprint plan cho từng sprint và sprint board cho Sprint 1.
