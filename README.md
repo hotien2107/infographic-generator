@@ -9,12 +9,17 @@ Dự án tập trung vào ba năng lực cốt lõi:
 
 ## Sprint 1 codebase
 
-Repository hiện đã có backend foundation cho Sprint 1 tại `backend/`, bám theo contract ở `contracts/sprint-1-api.yaml`.
+Repository hiện có:
+- `backend/`: REST API Go cho Sprint 1.
+- `frontend/`: giao diện React tách biệt với backend, build bằng Vite + React + Tailwind theo style `shadcn/ui`.
+
+Backend foundation tại `backend/` bám theo contract ở `contracts/sprint-1-api.yaml`, và frontend tại `frontend/` tiêu thụ trực tiếp các endpoint trong contract đó.
 
 ### Thành phần chính
 - REST API Go cho các luồng `create project`, `get project`, `upload document`.
 - PostgreSQL store để lưu metadata của `projects` và `documents`, tự khởi tạo schema khi service boot.
 - MinIO object-storage adapter cho file upload; file lớn sẽ được gửi bằng multipart upload để tối ưu throughput và độ ổn định.
+- Frontend React riêng biệt với backend, cung cấp dashboard tạo project, nạp lại trạng thái và upload tài liệu theo Sprint 1.
 - Test API happy path và validation quan trọng của Sprint 1 bằng fake dependency để không cần service ngoài khi chạy unit test.
 
 ### Chạy backend local
@@ -28,7 +33,29 @@ make run
 
 API mặc định chạy ở `http://localhost:8080`.
 
+### Chạy frontend local
+
+```bash
+cd frontend
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Frontend mặc định chạy ở `http://localhost:5173` và sẽ gọi backend qua:
+- `VITE_API_BASE_URL` nếu bạn cấu hình URL tuyệt đối;
+- hoặc proxy dev server tới `http://localhost:8080`.
+
+### Build frontend
+
+```bash
+cd frontend
+npm run build
+```
+
 ### Biến môi trường chính
+
+#### Backend
 - `APP_ENV`
 - `API_PORT`
 - `MAX_UPLOAD_SIZE_MB`
@@ -42,6 +69,10 @@ API mặc định chạy ở `http://localhost:8080`.
 - `MINIO_AUTO_CREATE_BUCKET`
 - `MINIO_MULTIPART_THRESHOLD_MB`
 - `MINIO_MULTIPART_PART_SIZE_MB`
+
+#### Frontend
+- `VITE_API_BASE_URL`
+- `VITE_API_PROXY_TARGET`
 
 ## Bộ tài liệu sprint
 
