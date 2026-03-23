@@ -7,7 +7,33 @@ Dự án tập trung vào ba năng lực cốt lõi:
 - tổ chức thông tin thành cấu trúc phù hợp để trực quan hóa;
 - tạo ra infographic dễ đọc, dễ chia sẻ và có giá trị sử dụng thực tế.
 
-Repository này hiện đóng vai trò tài liệu nền tảng cho định hướng sản phẩm, kiến trúc hệ thống và lộ trình triển khai MVP của dự án.
+## Sprint 1 codebase
+
+Repository hiện đã có backend foundation cho Sprint 1 tại `backend/`, bám theo contract ở `contracts/sprint-1-api.yaml`.
+
+### Thành phần chính
+- REST API Go cho các luồng `create project`, `get project`, `upload document`.
+- In-memory project store để unblock frontend/backend integration sớm.
+- Local object-storage adapter để lưu file upload vào thư mục cục bộ khi chưa kết nối S3-compatible storage.
+- Test API happy path và validation quan trọng của Sprint 1.
+
+### Chạy backend local
+
+```bash
+cd backend
+cp .env.example .env
+make tidy
+make run
+```
+
+API mặc định chạy ở `http://localhost:8080`.
+
+### Biến môi trường chính
+- `APP_ENV`
+- `API_PORT`
+- `OBJECT_STORAGE_DIR`
+- `MAX_UPLOAD_SIZE_MB`
+- `ALLOWED_FILE_TYPES`
 
 ## Bộ tài liệu sprint
 
