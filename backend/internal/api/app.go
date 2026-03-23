@@ -1,8 +1,10 @@
 package api
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -15,10 +17,16 @@ import (
 	"infographic-generator/backend/internal/utils"
 )
 
+//go:embed static/*
+var embeddedStaticFiles embed.FS
+
+var staticFiles = mustSubFS(embeddedStaticFiles, "static")
+
 type App struct {
-	config  config.Config
-	store   *projects.Store
-	storage *storage.LocalStorage
+	config     config.Config
+	store      *projects.Store
+	storage    *storage.LocalStorage
+	staticHTTP http.Handler
 }
 
 type Meta struct {
@@ -39,9 +47,10 @@ type createProjectRequest struct {
 
 func New(cfg config.Config) *App {
 	return &App{
-		config:  cfg,
-		store:   projects.NewStore(),
-		storage: storage.NewLocalStorage(cfg.StorageDir),
+		config:     cfg,
+		store:      projects.NewStore(),
+		storage:    storage.NewLocalStorage(cfg.StorageDir),
+		staticHTTP: http.FileServer(http.FS(staticFiles)),
 	}
 }
 
@@ -52,6 +61,16 @@ func (a *App) Handler() http.Handler {
 func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
 		a.writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+		return
+	}
+
+	if r.Method == http.MethodGet && (r.URL.Path == "/" || r.URL.Path == "/index.html") {
+		a.serveEmbeddedFile(w, r, "index.html")
+		return
+	}
+
+	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/static/") {
+		http.StripPrefix("/static/", a.staticHTTP).ServeHTTP(w, r)
 		return
 	}
 
@@ -78,6 +97,18 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"error": ErrorDetail{Code: "PROJECT_NOT_FOUND", Message: "route not found", Field: nil},
 		"meta":  meta(utils.NewUUID()),
 	})
+}
+
+func (a *App) serveEmbeddedFile(w http.ResponseWriter, r *http.Request, name string) {
+	content, err := fs.ReadFile(staticFiles, name)
+	if err != nil {
+		a.writeError(w, http.StatusInternalServerError, utils.NewUUID(), "VALIDATION_ERROR", "failed to load frontend", nil)
+		return
+	}
+
+	w.Header().Set("Content-Type", contentTypeForStaticAsset(name))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
 }
 
 func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
@@ -261,5 +292,24 @@ func mimeTypeForExtension(extension string) string {
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	default:
 		return "text/plain"
+	}
+}
+
+func mustSubFS(source embed.FS, dir string) fs.FS {
+	sub, err := fs.Sub(source, dir)
+	if err != nil {
+		panic(err)
+	}
+	return sub
+}
+
+func contentTypeForStaticAsset(name string) string {
+	switch {
+	case strings.HasSuffix(name, ".css"):
+		return "text/css; charset=utf-8"
+	case strings.HasSuffix(name, ".js"):
+		return "application/javascript; charset=utf-8"
+	default:
+		return "text/html; charset=utf-8"
 	}
 }

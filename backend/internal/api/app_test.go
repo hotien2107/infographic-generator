@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"infographic-generator/backend/internal/api"
@@ -26,6 +27,21 @@ func newTestHandler(t *testing.T) http.Handler {
 	}
 
 	return api.New(cfg).Handler()
+}
+
+func TestRootServesFrontend(t *testing.T) {
+	handler := newTestHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.Code)
+	}
+	if !strings.Contains(res.Body.String(), "Sprint 1 Frontend") {
+		t.Fatalf("expected frontend html, got %q", res.Body.String())
+	}
 }
 
 func TestCreateProjectAndGetDetail(t *testing.T) {
@@ -77,6 +93,49 @@ func TestCreateProjectAndGetDetail(t *testing.T) {
 	if len(detail.Data.Documents) != 0 {
 		t.Fatalf("expected no documents, got %d", len(detail.Data.Documents))
 	}
+}
+
+func TestCreateProjectTextMode(t *testing.T) {
+	handler := newTestHandler(t)
+
+	res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", `{"title":"Text Project","input_mode":"text"}`)
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", res.Code)
+	}
+
+	var created struct {
+		Data struct {
+			InputMode string `json:"input_mode"`
+			Status    string `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	if created.Data.InputMode != "text" || created.Data.Status != "draft" {
+		t.Fatalf("unexpected text mode project: %+v", created.Data)
+	}
+}
+
+func TestCreateProjectRejectsShortTitle(t *testing.T) {
+	handler := newTestHandler(t)
+
+	res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", `{"title":"Hi","input_mode":"file"}`)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", res.Code)
+	}
+	assertErrorCode(t, res, "VALIDATION_ERROR")
+}
+
+func TestCreateProjectRejectsMissingInputMode(t *testing.T) {
+	handler := newTestHandler(t)
+
+	res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", `{"title":"Missing input mode"}`)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", res.Code)
+	}
+	assertErrorCode(t, res, "VALIDATION_ERROR")
 }
 
 func TestUploadDocumentUpdatesProjectState(t *testing.T) {
@@ -155,19 +214,63 @@ func TestUploadDocumentRejectsUnsupportedType(t *testing.T) {
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", res.Code)
 	}
+	assertErrorCode(t, res, "INVALID_FILE_TYPE")
+}
 
-	var response struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
+func TestUploadDocumentRejectsOversizedFile(t *testing.T) {
+	handler := newTestHandler(t)
+	projectID := createProject(t, handler)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	fileWriter, err := writer.CreateFormFile("file", "large.txt")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
 	}
-	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
-		t.Fatalf("decode error response: %v", err)
+	largeContent := bytes.Repeat([]byte("a"), 1024*1024+1)
+	if _, err := fileWriter.Write(largeContent); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
 	}
 
-	if response.Error.Code != "INVALID_FILE_TYPE" {
-		t.Fatalf("expected INVALID_FILE_TYPE, got %s", response.Error.Code)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/documents", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", res.Code)
 	}
+	assertErrorCode(t, res, "FILE_TOO_LARGE")
+}
+
+func TestUploadDocumentReturnsNotFoundForMissingProject(t *testing.T) {
+	handler := newTestHandler(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	fileWriter, err := writer.CreateFormFile("file", "sample.txt")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := io.Copy(fileWriter, bytes.NewBufferString("hello sprint 1")); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/11111111-1111-1111-1111-111111111111/documents", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", res.Code)
+	}
+	assertErrorCode(t, res, "PROJECT_NOT_FOUND")
 }
 
 func createProject(t *testing.T, handler http.Handler) string {
@@ -188,4 +291,28 @@ func createProject(t *testing.T, handler http.Handler) string {
 	}
 
 	return created.Data.ID
+}
+
+func performJSONRequest(t *testing.T, handler http.Handler, method, target, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	return res
+}
+
+func assertErrorCode(t *testing.T, res *httptest.ResponseRecorder, expected string) {
+	t.Helper()
+	var response struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Code != expected {
+		t.Fatalf("expected %s, got %s", expected, response.Error.Code)
+	}
 }

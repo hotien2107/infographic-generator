@@ -35,61 +35,61 @@ Thiết lập nền tảng kỹ thuật và quy trình làm việc tối thiểu
 
 ## 5. Deliverable bắt buộc
 
-| Mã | Deliverable | Mô tả |
-| --- | --- | --- |
-| D1 | Product backlog | Backlog phân rã epic/feature/story/task cho 8 sprint |
-| D2 | Definition of Done | Chuẩn chất lượng dùng chung cho mọi vai trò |
-| D3 | Sprint 1 board | Danh sách task thực thi, owner đề xuất, ưu tiên và trạng thái |
-| D4 | API contract Sprint 1 | Contract cho create project, get project, upload document |
-| D5 | Sprint 1 QA checklist | Checklist kiểm tra happy path và error path |
-| D6 | Hướng dẫn môi trường nền tảng | Danh sách env, CI/CD, database, storage cần có để bắt đầu build |
+| Mã | Deliverable | Mô tả | Trạng thái |
+| --- | --- | --- | --- |
+| D1 | Product backlog | Backlog phân rã epic/feature/story/task cho 8 sprint | ✅ Hoàn thành |
+| D2 | Definition of Done | Chuẩn chất lượng dùng chung cho mọi vai trò | ✅ Hoàn thành |
+| D3 | Sprint 1 board | Danh sách task thực thi, owner đề xuất, ưu tiên và trạng thái | ✅ Hoàn thành |
+| D4 | API contract Sprint 1 | Contract cho create project, get project, upload document | ✅ Hoàn thành |
+| D5 | Sprint 1 QA checklist | Checklist kiểm tra happy path và error path | ✅ Hoàn thành |
+| D6 | Hướng dẫn môi trường nền tảng | Danh sách env, CI/CD, database, storage cần có để bắt đầu build | ✅ Hoàn thành |
 
 ## 6. Kế hoạch công việc theo vai trò
 
 ### Product / BA
 
-- Rà soát lại PRD, User Stories, Acceptance Criteria.
-- Mapping các story vào backlog và ưu tiên theo sprint.
-- Khóa sprint goal, in-scope/out-of-scope và dependency.
-- Làm rõ các enum trạng thái nghiệp vụ cho project/document.
+- [x] Rà soát lại PRD, User Stories, Acceptance Criteria.
+- [x] Mapping các story vào backlog và ưu tiên theo sprint.
+- [x] Khóa sprint goal, in-scope/out-of-scope và dependency.
+- [x] Làm rõ các enum trạng thái nghiệp vụ cho project/document.
 
 ### Backend
 
-- Xác định entity ban đầu: user, project, document.
-- Chuẩn hóa workflow trạng thái cho project ở Sprint 1.
-- Thống nhất request/response schema với frontend.
-- Ghi rõ validation rule cho upload file.
+- [x] Xác định entity ban đầu: user, project, document.
+- [x] Chuẩn hóa workflow trạng thái cho project ở Sprint 1.
+- [x] Thống nhất request/response schema với frontend.
+- [x] Ghi rõ validation rule cho upload file.
 
 ### Frontend
 
-- Chốt dữ liệu cần cho màn hình create project, upload file và project detail.
-- Mapping UI state với enum trạng thái trong contract.
-- Chuẩn bị plan tích hợp API trong sprint kế tiếp nếu code chưa sẵn sàng.
+- [x] Chốt dữ liệu cần cho màn hình create project, upload file và project detail.
+- [x] Mapping UI state với enum trạng thái trong contract.
+- [x] Dựng frontend tối thiểu và kết nối trực tiếp với API Sprint 1.
 
 ### DevOps
 
-- Xác định biến môi trường nền tảng.
-- Liệt kê yêu cầu cho local development, build pipeline, database và object storage.
-- Chuẩn bị tiêu chí để CI kiểm tra contract/tài liệu khi repo bắt đầu có code.
+- [x] Xác định biến môi trường nền tảng.
+- [x] Liệt kê yêu cầu cho local development, build pipeline, database và object storage.
+- [x] Chuẩn bị tiêu chí để CI kiểm tra contract/tài liệu khi repo bắt đầu có code.
 
 ### QA
 
-- Tạo checklist test cho create project.
-- Tạo checklist test cho upload file hợp lệ/không hợp lệ.
-- Xác định dữ liệu mẫu cần dùng trong sprint kế tiếp.
+- [x] Tạo checklist test cho create project.
+- [x] Tạo checklist test cho upload file hợp lệ/không hợp lệ.
+- [x] Xác định dữ liệu mẫu cần dùng trong sprint kế tiếp.
 
 ## 7. Danh sách task Sprint 1
 
-| ID | Vai trò | Task | Ưu tiên | Estimate |
-| --- | --- | --- | --- | --- |
-| S1-T01 | PO/BA | Tổng hợp backlog từ PRD, User Stories, AC | P0 | 2 SP |
-| S1-T02 | PO/BA | Hoàn thiện Sprint 1 plan và sprint board | P0 | 2 SP |
-| S1-T03 | BA/Tech Lead | Chuẩn hóa trạng thái project/document ban đầu | P0 | 1 SP |
-| S1-T04 | Backend | Mô tả schema logic user/project/document | P0 | 2 SP |
-| S1-T05 | Backend/Frontend | Chốt API contract cho create project/upload/get detail | P0 | 3 SP |
-| S1-T06 | DevOps | Liệt kê env, CI/CD, DB, storage baseline | P1 | 2 SP |
-| S1-T07 | QA | Viết checklist/test case Sprint 1 | P0 | 2 SP |
-| S1-T08 | Whole team | Review DoD và thống nhất tiêu chí Done | P0 | 1 SP |
+| ID | Vai trò | Task | Ưu tiên | Estimate | Trạng thái |
+| --- | --- | --- | --- | --- | --- |
+| S1-T01 | PO/BA | Tổng hợp backlog từ PRD, User Stories, AC | P0 | 2 SP | ✅ Done |
+| S1-T02 | PO/BA | Hoàn thiện Sprint 1 plan và sprint board | P0 | 2 SP | ✅ Done |
+| S1-T03 | BA/Tech Lead | Chuẩn hóa trạng thái project/document ban đầu | P0 | 1 SP | ✅ Done |
+| S1-T04 | Backend | Mô tả schema logic user/project/document | P0 | 2 SP | ✅ Done |
+| S1-T05 | Backend/Frontend | Chốt API contract cho create project/upload/get detail | P0 | 3 SP | ✅ Done |
+| S1-T06 | DevOps | Liệt kê env, CI/CD, DB, storage baseline | P1 | 2 SP | ✅ Done |
+| S1-T07 | QA | Viết checklist/test case Sprint 1 | P0 | 2 SP | ✅ Done |
+| S1-T08 | Whole team | Review DoD và thống nhất tiêu chí Done | P0 | 1 SP | ✅ Done |
 
 ## 8. Rủi ro và hướng xử lý
 
@@ -104,19 +104,19 @@ Thiết lập nền tảng kỹ thuật và quy trình làm việc tối thiểu
 
 ### Create project
 
-- [ ] Tạo project với `title` hợp lệ và `input_mode=file` thành công.
-- [ ] Tạo project với `input_mode=text` thành công.
-- [ ] Từ chối `title` dưới 3 ký tự.
-- [ ] Từ chối request thiếu `input_mode`.
-- [ ] Trả về đúng trạng thái ban đầu `draft` và `waiting_for_upload`.
+- [x] Tạo project với `title` hợp lệ và `input_mode=file` thành công.
+- [x] Tạo project với `input_mode=text` thành công.
+- [x] Từ chối `title` dưới 3 ký tự.
+- [x] Từ chối request thiếu `input_mode`.
+- [x] Trả về đúng trạng thái ban đầu `draft` và `waiting_for_upload`.
 
 ### Upload document
 
-- [ ] Upload file hợp lệ vào project tồn tại trả về `202`.
-- [ ] Sau upload thành công, project/document phản ánh trạng thái `uploaded`.
-- [ ] Từ chối file sai định dạng với mã lỗi phù hợp.
-- [ ] Từ chối file vượt dung lượng cho phép.
-- [ ] Trả về `404` khi project không tồn tại.
+- [x] Upload file hợp lệ vào project tồn tại trả về `202`.
+- [x] Sau upload thành công, project/document phản ánh trạng thái `uploaded`.
+- [x] Từ chối file sai định dạng với mã lỗi phù hợp.
+- [x] Từ chối file vượt dung lượng cho phép.
+- [x] Trả về `404` khi project không tồn tại.
 
 ## 10. Hướng dẫn môi trường nền tảng
 

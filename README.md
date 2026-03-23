@@ -13,9 +13,10 @@ Repository hiện đã có backend foundation cho Sprint 1 tại `backend/`, bá
 
 ### Thành phần chính
 - REST API Go cho các luồng `create project`, `get project`, `upload document`.
+- Frontend Sprint 1 được nhúng trực tiếp vào backend để hiển thị màn hình create project, upload file và project detail ngay tại `/`.
 - In-memory project store để unblock frontend/backend integration sớm.
 - Local object-storage adapter để lưu file upload vào thư mục cục bộ khi chưa kết nối S3-compatible storage.
-- Test API happy path và validation quan trọng của Sprint 1.
+- Test API happy path, validation quan trọng và route frontend của Sprint 1.
 
 ### Chạy backend local
 
@@ -26,7 +27,7 @@ make tidy
 make run
 ```
 
-API mặc định chạy ở `http://localhost:8080`.
+API mặc định chạy ở `http://localhost:8080`. Mở trình duyệt tại `http://localhost:8080/` để dùng frontend Sprint 1.
 
 ### Biến môi trường chính
 - `APP_ENV`
