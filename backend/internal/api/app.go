@@ -17,8 +17,8 @@ import (
 
 type App struct {
 	config  config.Config
-	store   *projects.Store
-	storage *storage.LocalStorage
+	store   projects.Store
+	storage storage.BlobStorage
 }
 
 type Meta struct {
@@ -37,11 +37,20 @@ type createProjectRequest struct {
 	InputMode string `json:"input_mode"`
 }
 
-func New(cfg config.Config) *App {
+func New(cfg config.Config, store projects.Store, blobStorage storage.BlobStorage) *App {
 	return &App{
 		config:  cfg,
-		store:   projects.NewStore(),
-		storage: storage.NewLocalStorage(cfg.StorageDir),
+		store:   store,
+		storage: blobStorage,
+	}
+}
+
+func (a *App) Close() {
+	if a.store != nil {
+		a.store.Close()
+	}
+	if a.storage != nil {
+		_ = a.storage.Close()
 	}
 }
 
@@ -104,7 +113,12 @@ func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	project := a.store.CreateProject(title, inputMode)
+	project, err := a.store.CreateProject(r.Context(), title, inputMode)
+	if err != nil {
+		a.writeError(w, http.StatusInternalServerError, requestID, "PROJECT_CREATE_FAILED", "failed to persist project", nil)
+		return
+	}
+
 	a.writeJSON(w, http.StatusCreated, map[string]any{
 		"data":  project,
 		"error": nil,
@@ -120,9 +134,10 @@ func (a *App) getProject(w http.ResponseWriter, r *http.Request, projectID strin
 		return
 	}
 
-	project, docs, err := a.store.GetProject(projectID)
+	project, docs, err := a.store.GetProject(r.Context(), projectID)
 	if err != nil {
-		a.writeError(w, http.StatusNotFound, requestID, "PROJECT_NOT_FOUND", "project not found", nil)
+		status, code, message := mapStoreError(err)
+		a.writeError(w, status, requestID, code, message, nil)
 		return
 	}
 
@@ -184,9 +199,9 @@ func (a *App) uploadDocument(w http.ResponseWriter, r *http.Request, projectID s
 		return
 	}
 
-	storageKey, err := a.storage.Save(fileHeader)
+	storageKey, err := a.storage.Save(r.Context(), fileHeader)
 	if err != nil {
-		a.writeError(w, http.StatusInternalServerError, requestID, "VALIDATION_ERROR", "failed to persist uploaded file", nil)
+		a.writeError(w, http.StatusInternalServerError, requestID, "DOCUMENT_STORAGE_FAILED", "failed to persist uploaded file", nil)
 		return
 	}
 
@@ -201,9 +216,10 @@ func (a *App) uploadDocument(w http.ResponseWriter, r *http.Request, projectID s
 		CreatedAt:  time.Now().UTC(),
 	}
 
-	project, _, err := a.store.AddDocument(projectID, document)
+	project, _, err := a.store.AddDocument(r.Context(), projectID, document)
 	if err != nil {
-		a.writeError(w, http.StatusNotFound, requestID, "PROJECT_NOT_FOUND", "project not found", nil)
+		status, code, message := mapStoreError(err)
+		a.writeError(w, status, requestID, code, message, nil)
 		return
 	}
 
@@ -262,4 +278,14 @@ func mimeTypeForExtension(extension string) string {
 	default:
 		return "text/plain"
 	}
+}
+
+func mapStoreError(err error) (status int, code, message string) {
+	if err == nil {
+		return http.StatusOK, "", ""
+	}
+	if err == projects.ErrProjectNotFound {
+		return http.StatusNotFound, "PROJECT_NOT_FOUND", "project not found"
+	}
+	return http.StatusInternalServerError, "PERSISTENCE_ERROR", "failed to query persistent storage"
 }

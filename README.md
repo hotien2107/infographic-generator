@@ -13,9 +13,9 @@ Repository hiện đã có backend foundation cho Sprint 1 tại `backend/`, bá
 
 ### Thành phần chính
 - REST API Go cho các luồng `create project`, `get project`, `upload document`.
-- In-memory project store để unblock frontend/backend integration sớm.
-- Local object-storage adapter để lưu file upload vào thư mục cục bộ khi chưa kết nối S3-compatible storage.
-- Test API happy path và validation quan trọng của Sprint 1.
+- PostgreSQL store để lưu metadata của `projects` và `documents`, tự khởi tạo schema khi service boot.
+- MinIO object-storage adapter cho file upload; file lớn sẽ được gửi bằng multipart upload để tối ưu throughput và độ ổn định.
+- Test API happy path và validation quan trọng của Sprint 1 bằng fake dependency để không cần service ngoài khi chạy unit test.
 
 ### Chạy backend local
 
@@ -31,9 +31,17 @@ API mặc định chạy ở `http://localhost:8080`.
 ### Biến môi trường chính
 - `APP_ENV`
 - `API_PORT`
-- `OBJECT_STORAGE_DIR`
 - `MAX_UPLOAD_SIZE_MB`
 - `ALLOWED_FILE_TYPES`
+- `POSTGRES_URL`
+- `MINIO_ENDPOINT`
+- `MINIO_ACCESS_KEY`
+- `MINIO_SECRET_KEY`
+- `MINIO_BUCKET`
+- `MINIO_USE_SSL`
+- `MINIO_AUTO_CREATE_BUCKET`
+- `MINIO_MULTIPART_THRESHOLD_MB`
+- `MINIO_MULTIPART_PART_SIZE_MB`
 
 ## Bộ tài liệu sprint
 
