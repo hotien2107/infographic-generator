@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"os"
 	"strconv"
 	"strings"
@@ -28,6 +29,12 @@ type Config struct {
 }
 
 func Load() Config {
+	return LoadFromPaths(".env")
+}
+
+func LoadFromPaths(paths ...string) Config {
+	loadDotEnv(paths...)
+
 	return Config{
 		AppEnv:                getEnv("APP_ENV", "development"),
 		Port:                  getEnv("API_PORT", "8080"),
@@ -46,6 +53,37 @@ func Load() Config {
 		ProcessingQueueBuffer: getEnvAsInt("PROCESSING_QUEUE_BUFFER", 16),
 		ProcessingStepDelay:   time.Duration(getEnvAsInt("PROCESSING_STEP_DELAY_MS", 400)) * time.Millisecond,
 		ProcessingFailPattern: strings.ToLower(getEnv("PROCESSING_FAIL_PATTERN", "fail")),
+	}
+}
+
+func loadDotEnv(paths ...string) {
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			key, value, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			value = strings.Trim(value, `"'`)
+			if key != "" {
+				_ = os.Setenv(key, value)
+			}
+		}
+		_ = file.Close()
 	}
 }
 

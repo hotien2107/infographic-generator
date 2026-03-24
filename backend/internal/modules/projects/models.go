@@ -29,12 +29,33 @@ const (
 type Project struct {
 	ID                string            `json:"id"`
 	Title             string            `json:"title"`
+	Description       string            `json:"description"`
 	InputMode         InputMode         `json:"input_mode"`
 	Status            Status            `json:"status"`
 	CurrentStep       Step              `json:"current_step"`
 	CreatedAt         time.Time         `json:"created_at"`
 	UpdatedAt         time.Time         `json:"updated_at"`
 	ProcessingSummary ProcessingSummary `json:"processing_summary"`
+}
+
+type ProjectListItem struct {
+	Project
+	DocumentCount int `json:"document_count"`
+}
+
+type DashboardSummary struct {
+	TotalProjects      int `json:"total_projects"`
+	TotalDocuments     int `json:"total_documents"`
+	ProcessingProjects int `json:"processing_projects"`
+	CompletedProjects  int `json:"completed_projects"`
+	AttentionProjects  int `json:"attention_projects"`
+	DraftProjects      int `json:"draft_projects"`
+}
+
+type ProjectUpdate struct {
+	Title       *string
+	Description *string
+	InputMode   *InputMode
 }
 
 type ProcessingSummary struct {

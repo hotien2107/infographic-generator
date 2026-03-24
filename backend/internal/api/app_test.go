@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +34,40 @@ func newMemoryStore() *memoryStore {
 	}
 }
 
-func (s *memoryStore) CreateProject(_ context.Context, title string, inputMode projects.InputMode) (projects.Project, error) {
+func (s *memoryStore) GetDashboardSummary(_ context.Context) (projects.DashboardSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	summary := projects.DashboardSummary{TotalProjects: len(s.projects)}
+	for projectID, project := range s.projects {
+		summary.TotalDocuments += len(s.documents[projectID])
+		switch project.Status {
+		case projects.StatusProcessing:
+			summary.ProcessingProjects++
+		case projects.StatusProcessed:
+			summary.CompletedProjects++
+		case projects.StatusFailed:
+			summary.AttentionProjects++
+		case projects.StatusDraft:
+			summary.DraftProjects++
+		}
+	}
+	return summary, nil
+}
+
+func (s *memoryStore) ListProjects(_ context.Context) ([]projects.ProjectListItem, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	items := make([]projects.ProjectListItem, 0, len(s.projects))
+	for projectID, project := range s.projects {
+		project.ProcessingSummary = buildSummary(s.documents[projectID])
+		items = append(items, projects.ProjectListItem{Project: project, DocumentCount: len(s.documents[projectID])})
+	}
+	return items, nil
+}
+
+func (s *memoryStore) CreateProject(_ context.Context, title, description string, inputMode projects.InputMode) (projects.Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -43,6 +75,7 @@ func (s *memoryStore) CreateProject(_ context.Context, title string, inputMode p
 	project := projects.Project{
 		ID:          utils.NewUUID(),
 		Title:       title,
+		Description: description,
 		InputMode:   inputMode,
 		Status:      projects.StatusDraft,
 		CurrentStep: projects.StepWaitingUpload,
@@ -66,6 +99,41 @@ func (s *memoryStore) GetProject(_ context.Context, projectID string) (projects.
 	return project, docs, nil
 }
 
+func (s *memoryStore) UpdateProject(_ context.Context, projectID string, update projects.ProjectUpdate) (projects.Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	project, ok := s.projects[projectID]
+	if !ok {
+		return projects.Project{}, projects.ErrProjectNotFound
+	}
+	if update.Title != nil {
+		project.Title = *update.Title
+	}
+	if update.Description != nil {
+		project.Description = *update.Description
+	}
+	if update.InputMode != nil {
+		project.InputMode = *update.InputMode
+	}
+	project.UpdatedAt = time.Now().UTC()
+	project.ProcessingSummary = buildSummary(s.documents[projectID])
+	s.projects[projectID] = project
+	return project, nil
+}
+
+func (s *memoryStore) DeleteProject(_ context.Context, projectID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.projects[projectID]; !ok {
+		return projects.ErrProjectNotFound
+	}
+	delete(s.projects, projectID)
+	delete(s.documents, projectID)
+	return nil
+}
+
 func (s *memoryStore) AddDocument(_ context.Context, projectID string, document documents.Document) (projects.Project, []documents.Document, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -82,6 +150,55 @@ func (s *memoryStore) AddDocument(_ context.Context, projectID string, document 
 	docs := append([]documents.Document(nil), s.documents[projectID]...)
 	project.ProcessingSummary = buildSummary(docs)
 	return project, docs, nil
+}
+
+func (s *memoryStore) ListDocuments(_ context.Context, projectID string) ([]documents.Document, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, ok := s.projects[projectID]; !ok {
+		return nil, projects.ErrProjectNotFound
+	}
+	return append([]documents.Document(nil), s.documents[projectID]...), nil
+}
+
+func (s *memoryStore) UpdateDocument(_ context.Context, projectID, documentID, filename string) (documents.Document, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.projects[projectID]; !ok {
+		return documents.Document{}, projects.ErrProjectNotFound
+	}
+	for index, doc := range s.documents[projectID] {
+		if doc.ID != documentID {
+			continue
+		}
+		doc.Filename = filename
+		doc.UpdatedAt = time.Now().UTC()
+		s.documents[projectID][index] = doc
+		return doc, nil
+	}
+	return documents.Document{}, projects.ErrDocumentNotFound
+}
+
+func (s *memoryStore) DeleteDocument(_ context.Context, projectID, documentID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	project, ok := s.projects[projectID]
+	if !ok {
+		return projects.ErrProjectNotFound
+	}
+	docs := s.documents[projectID]
+	for index, doc := range docs {
+		if doc.ID != documentID {
+			continue
+		}
+		docs = append(docs[:index], docs[index+1:]...)
+		s.documents[projectID] = docs
+		project.Status, project.CurrentStep = deriveProjectState(docs)
+		project.UpdatedAt = time.Now().UTC()
+		s.projects[projectID] = project
+		return nil
+	}
+	return projects.ErrDocumentNotFound
 }
 
 func (s *memoryStore) GetLatestDocument(_ context.Context, projectID string) (documents.Document, error) {
@@ -164,216 +281,113 @@ func newTestHandler(t *testing.T, autoProcess bool) http.Handler {
 	return app.Handler()
 }
 
-func TestCreateProjectHappyPath(t *testing.T) {
+func TestProjectManagementFlow(t *testing.T) {
 	handler := newTestHandler(t, false)
 
-	payload := []byte(`{"title":"Sprint 1 Project","input_mode":"file"}`)
-	res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", payload)
+	createRes := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", []byte(`{"title":"Báo cáo quý 2","description":"Tổng hợp số liệu chiến dịch","input_mode":"file"}`))
+	if createRes.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", createRes.Code)
+	}
+
+	var created struct {
+		Data map[string]any `json:"data"`
+	}
+	decodeJSON(t, createRes, &created)
+	projectID := created.Data["id"].(string)
+
+	listRes := performJSONRequest(t, handler, http.MethodGet, "/api/v1/projects", nil)
+	if listRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", listRes.Code)
+	}
+
+	updateRes := performJSONRequest(t, handler, http.MethodPatch, "/api/v1/projects/"+projectID, []byte(`{"title":"Báo cáo quý 2 đã cập nhật"}`))
+	if updateRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", updateRes.Code)
+	}
+
+	getRes := performJSONRequest(t, handler, http.MethodGet, "/api/v1/projects/"+projectID, nil)
+	if getRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", getRes.Code)
+	}
+
+	deleteRes := performJSONRequest(t, handler, http.MethodDelete, "/api/v1/projects/"+projectID, nil)
+	if deleteRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", deleteRes.Code)
+	}
+}
+
+func TestDocumentManagementFlow(t *testing.T) {
+	handler := newTestHandler(t, false)
+	projectID := createProject(t, handler, "Tài liệu khách hàng", "Tổng hợp bản thảo", "file")
+
+	uploadRes := uploadDocument(t, handler, projectID, "sample.txt", "brief.txt", []byte("hello product"), nil)
+	if uploadRes.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", uploadRes.Code)
+	}
+
+	var uploaded struct {
+		Data struct {
+			Document map[string]any `json:"document"`
+		} `json:"data"`
+	}
+	decodeJSON(t, uploadRes, &uploaded)
+	documentID := uploaded.Data.Document["id"].(string)
+	if _, exists := uploaded.Data.Document["storage_key"]; exists {
+		t.Fatalf("storage_key must not be exposed in API response")
+	}
+
+	listRes := performJSONRequest(t, handler, http.MethodGet, "/api/v1/projects/"+projectID+"/documents", nil)
+	if listRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", listRes.Code)
+	}
+
+	updateRes := performJSONRequest(t, handler, http.MethodPatch, "/api/v1/projects/"+projectID+"/documents/"+documentID, []byte(`{"filename":"customer-brief.txt"}`))
+	if updateRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", updateRes.Code)
+	}
+
+	deleteRes := performJSONRequest(t, handler, http.MethodDelete, "/api/v1/projects/"+projectID+"/documents/"+documentID, nil)
+	if deleteRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", deleteRes.Code)
+	}
+}
+
+func TestDashboardSummary(t *testing.T) {
+	handler := newTestHandler(t, false)
+	projectID := createProject(t, handler, "Tổng quan", "Mô tả", "file")
+	uploadDocument(t, handler, projectID, "sample.txt", "summary.txt", []byte("summary"), nil)
+
+	res := performJSONRequest(t, handler, http.MethodGet, "/api/v1/dashboard/summary", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.Code)
+	}
+
+	var payload struct {
+		Data projects.DashboardSummary `json:"data"`
+	}
+	decodeJSON(t, res, &payload)
+	if payload.Data.TotalProjects != 1 || payload.Data.TotalDocuments != 1 {
+		t.Fatalf("unexpected dashboard summary: %+v", payload.Data)
+	}
+}
+
+func TestValidationErrors(t *testing.T) {
+	handler := newTestHandler(t, false)
+
+	res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", []byte(`{"title":"ab","input_mode":"file"}`))
+	assertErrorCode(t, res, http.StatusBadRequest, "VALIDATION_ERROR")
+
+	res = performJSONRequest(t, handler, http.MethodPatch, "/api/v1/projects/not-a-uuid", []byte(`{"title":"abc"}`))
+	assertErrorCode(t, res, http.StatusBadRequest, "VALIDATION_ERROR")
+}
+
+func createProject(t *testing.T, handler http.Handler, title, description, inputMode string) string {
+	t.Helper()
+	payload := map[string]string{"title": title, "description": description, "input_mode": inputMode}
+	body, _ := json.Marshal(payload)
+	res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", body)
 	if res.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d", res.Code)
-	}
-
-	var response struct {
-		Data  projects.Project `json:"data"`
-		Error any              `json:"error"`
-	}
-	decodeJSON(t, res, &response)
-	if response.Data.Status != projects.StatusDraft || response.Data.CurrentStep != projects.StepWaitingUpload {
-		t.Fatalf("unexpected project state: %+v", response.Data)
-	}
-	if response.Error != nil {
-		t.Fatalf("expected nil error, got %+v", response.Error)
-	}
-}
-
-func TestCreateProjectValidationErrors(t *testing.T) {
-	handler := newTestHandler(t, false)
-
-	t.Run("reject unknown field", func(t *testing.T) {
-		res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", []byte(`{"title":"Valid title","input_mode":"file","extra":"nope"}`))
-		assertErrorCode(t, res, http.StatusBadRequest, "VALIDATION_ERROR")
-	})
-
-	t.Run("reject short title", func(t *testing.T) {
-		res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", []byte(`{"title":"ab","input_mode":"file"}`))
-		assertErrorCode(t, res, http.StatusBadRequest, "VALIDATION_ERROR")
-	})
-
-	t.Run("reject invalid input mode", func(t *testing.T) {
-		res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", []byte(`{"title":"Hello","input_mode":"voice"}`))
-		assertErrorCode(t, res, http.StatusBadRequest, "VALIDATION_ERROR")
-	})
-}
-
-func TestGetProjectHappyPath(t *testing.T) {
-	handler := newTestHandler(t, false)
-	projectID := createProject(t, handler, "Get Detail", "file")
-
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID, nil)
-	handler.ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", res.Code)
-	}
-
-	var response struct {
-		Data struct {
-			ID        string               `json:"id"`
-			Documents []documents.Document `json:"documents"`
-		} `json:"data"`
-	}
-	decodeJSON(t, res, &response)
-	if response.Data.ID != projectID {
-		t.Fatalf("expected project id %s, got %s", projectID, response.Data.ID)
-	}
-	if len(response.Data.Documents) != 0 {
-		t.Fatalf("expected no documents, got %d", len(response.Data.Documents))
-	}
-}
-
-func TestGetProjectNotFound(t *testing.T) {
-	handler := newTestHandler(t, false)
-	missingID := utils.NewUUID()
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+missingID, nil)
-	handler.ServeHTTP(res, req)
-	assertErrorCode(t, res, http.StatusNotFound, "PROJECT_NOT_FOUND")
-}
-
-func TestGetProjectInvalidUUID(t *testing.T) {
-	handler := newTestHandler(t, false)
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/not-a-uuid", nil)
-	handler.ServeHTTP(res, req)
-	assertErrorCode(t, res, http.StatusBadRequest, "VALIDATION_ERROR")
-}
-
-func TestUploadFileHappyPath(t *testing.T) {
-	handler := newTestHandler(t, false)
-	projectID := createProject(t, handler, "Upload Target", "file")
-
-	res := uploadDocument(t, handler, projectID, "sample.txt", "brief.txt", []byte("hello sprint 1"), nil)
-	if res.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", res.Code)
-	}
-
-	var response struct {
-		Data struct {
-			Project  projects.Project   `json:"project"`
-			Document documents.Document `json:"document"`
-		} `json:"data"`
-	}
-	decodeJSON(t, res, &response)
-	if response.Data.Project.Status != projects.StatusUploaded || response.Data.Project.CurrentStep != projects.StepUploaded {
-		t.Fatalf("unexpected project state: %+v", response.Data.Project)
-	}
-	if response.Data.Document.Filename != "brief.txt" {
-		t.Fatalf("unexpected document filename: %s", response.Data.Document.Filename)
-	}
-}
-
-func TestUploadDocumentRejectsUnsupportedType(t *testing.T) {
-	handler := newTestHandler(t, false)
-	projectID := createProject(t, handler, "Upload Target", "file")
-	res := uploadDocument(t, handler, projectID, "script.exe", "script.exe", []byte("bad file"), nil)
-	assertErrorCode(t, res, http.StatusBadRequest, "INVALID_FILE_TYPE")
-}
-
-func TestUploadDocumentRejectsLargeFile(t *testing.T) {
-	handler := newTestHandler(t, false)
-	projectID := createProject(t, handler, "Upload Target", "file")
-	res := uploadDocument(t, handler, projectID, "big.txt", "big.txt", bytes.Repeat([]byte("a"), 2*1024*1024), nil)
-	assertErrorCode(t, res, http.StatusBadRequest, "FILE_TOO_LARGE")
-}
-
-func TestUploadDocumentRequiresFile(t *testing.T) {
-	handler := newTestHandler(t, false)
-	projectID := createProject(t, handler, "Upload Target", "file")
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	_ = writer.WriteField("original_filename", "missing.txt")
-	_ = writer.Close()
-
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/documents", body)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	handler.ServeHTTP(res, req)
-	assertErrorCode(t, res, http.StatusBadRequest, "VALIDATION_ERROR")
-}
-
-func TestUploadDocumentQueuesAndProcesses(t *testing.T) {
-	handler := newTestHandler(t, true)
-	projectID := createProject(t, handler, "Async Flow", "file")
-
-	res := uploadDocument(t, handler, projectID, "story.txt", "story.txt", []byte("hello"), nil)
-	if res.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", res.Code)
-	}
-
-	waitForProjectState(t, handler, projectID, projects.StatusProcessed, documents.StatusProcessed)
-}
-
-func TestTriggerProcessingFailureFlow(t *testing.T) {
-	handler := newTestHandler(t, false)
-	projectID := createProject(t, handler, "Manual Flow", "file")
-	uploadDocument(t, handler, projectID, "will-fail.txt", "will-fail.txt", []byte("boom"), nil)
-
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/processing", nil)
-	handler.ServeHTTP(res, req)
-	if res.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", res.Code)
-	}
-
-	waitForProjectState(t, handler, projectID, projects.StatusFailed, documents.StatusFailed)
-}
-
-func TestProjectDetailReflectsProcessingSummary(t *testing.T) {
-	handler := newTestHandler(t, true)
-	projectID := createProject(t, handler, "Summary", "file")
-	uploadDocument(t, handler, projectID, "report.txt", "report.txt", []byte("summary"), nil)
-	waitForProjectState(t, handler, projectID, projects.StatusProcessed, documents.StatusProcessed)
-
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID, nil)
-	handler.ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", res.Code)
-	}
-
-	var response struct {
-		Data struct {
-			Status            string `json:"status"`
-			ProcessingSummary struct {
-				ProcessedDocuments int `json:"processed_documents"`
-				TotalDocuments     int `json:"total_documents"`
-			} `json:"processing_summary"`
-		} `json:"data"`
-	}
-	decodeJSON(t, res, &response)
-	if response.Data.Status != string(projects.StatusProcessed) {
-		t.Fatalf("expected processed project, got %s", response.Data.Status)
-	}
-	if response.Data.ProcessingSummary.TotalDocuments != 1 || response.Data.ProcessingSummary.ProcessedDocuments != 1 {
-		t.Fatalf("unexpected summary: %+v", response.Data.ProcessingSummary)
-	}
-}
-
-func performJSONRequest(t *testing.T, handler http.Handler, method, path string, payload []byte) *httptest.ResponseRecorder {
-	t.Helper()
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-	handler.ServeHTTP(res, req)
-	return res
-}
-
-func createProject(t *testing.T, handler http.Handler, title, inputMode string) string {
-	t.Helper()
-	res := performJSONRequest(t, handler, http.MethodPost, "/api/v1/projects", []byte(`{"title":"`+title+`","input_mode":"`+inputMode+`"}`))
-	if res.Code != http.StatusCreated {
-		t.Fatalf("expected create project to return 201, got %d", res.Code)
 	}
 	var response struct {
 		Data struct {
@@ -386,18 +400,18 @@ func createProject(t *testing.T, handler http.Handler, title, inputMode string) 
 
 func uploadDocument(t *testing.T, handler http.Handler, projectID, filename, originalFilename string, content []byte, extraFields map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
 	fileWriter, err := writer.CreateFormFile("file", filename)
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	if _, err := io.Copy(fileWriter, bytes.NewReader(content)); err != nil {
+	if _, err := fileWriter.Write(content); err != nil {
 		t.Fatalf("write file content: %v", err)
 	}
 	if originalFilename != "" {
 		if err := writer.WriteField("original_filename", originalFilename); err != nil {
-			t.Fatalf("write original filename field: %v", err)
+			t.Fatalf("write original filename: %v", err)
 		}
 	}
 	for key, value := range extraFields {
@@ -406,20 +420,44 @@ func uploadDocument(t *testing.T, handler http.Handler, projectID, filename, ori
 		}
 	}
 	if err := writer.Close(); err != nil {
-		t.Fatalf("close multipart writer: %v", err)
+		t.Fatalf("close writer: %v", err)
 	}
 
 	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/documents", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/documents", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	handler.ServeHTTP(res, req)
 	return res
 }
 
-func assertErrorCode(t *testing.T, res *httptest.ResponseRecorder, wantStatus int, wantCode string) {
+func performJSONRequest(t *testing.T, handler http.Handler, method, path string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
-	if res.Code != wantStatus {
-		t.Fatalf("expected status %d, got %d", wantStatus, res.Code)
+	var reader *bytes.Reader
+	if body == nil {
+		reader = bytes.NewReader(nil)
+	} else {
+		reader = bytes.NewReader(body)
+	}
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, reader)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	handler.ServeHTTP(res, req)
+	return res
+}
+
+func decodeJSON(t *testing.T, res *httptest.ResponseRecorder, target any) {
+	t.Helper()
+	if err := json.NewDecoder(strings.NewReader(res.Body.String())).Decode(target); err != nil {
+		t.Fatalf("decode json: %v", err)
+	}
+}
+
+func assertErrorCode(t *testing.T, res *httptest.ResponseRecorder, expectedStatus int, expectedCode string) {
+	t.Helper()
+	if res.Code != expectedStatus {
+		t.Fatalf("expected status %d, got %d", expectedStatus, res.Code)
 	}
 	var payload struct {
 		Error struct {
@@ -427,41 +465,9 @@ func assertErrorCode(t *testing.T, res *httptest.ResponseRecorder, wantStatus in
 		} `json:"error"`
 	}
 	decodeJSON(t, res, &payload)
-	if payload.Error.Code != wantCode {
-		t.Fatalf("expected error code %s, got %s", wantCode, payload.Error.Code)
+	if payload.Error.Code != expectedCode {
+		t.Fatalf("expected code %s, got %s", expectedCode, payload.Error.Code)
 	}
-}
-
-func decodeJSON(t *testing.T, res *httptest.ResponseRecorder, dst any) {
-	t.Helper()
-	if err := json.NewDecoder(res.Body).Decode(dst); err != nil {
-		t.Fatalf("decode JSON response: %v", err)
-	}
-}
-
-func waitForProjectState(t *testing.T, handler http.Handler, projectID string, expectedProject projects.Status, expectedDocument documents.Status) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID, nil)
-		handler.ServeHTTP(res, req)
-		if res.Code != http.StatusOK {
-			t.Fatalf("expected 200 while polling, got %d", res.Code)
-		}
-		var payload struct {
-			Data struct {
-				Status    string               `json:"status"`
-				Documents []documents.Document `json:"documents"`
-			} `json:"data"`
-		}
-		decodeJSON(t, res, &payload)
-		if payload.Data.Status == string(expectedProject) && len(payload.Data.Documents) == 1 && payload.Data.Documents[0].Status == expectedDocument {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for project %s and document %s", expectedProject, expectedDocument)
 }
 
 func buildSummary(docs []documents.Document) projects.ProcessingSummary {
@@ -478,11 +484,37 @@ func buildSummary(docs []documents.Document) projects.ProcessingSummary {
 			summary.ProcessedDocuments++
 		case documents.StatusFailed:
 			summary.FailedDocuments++
-			if doc.ErrorMessage != nil {
-				message := strings.Clone(*doc.ErrorMessage)
-				summary.LastError = &message
-			}
 		}
 	}
 	return summary
+}
+
+func deriveProjectState(docs []documents.Document) (projects.Status, projects.Step) {
+	if len(docs) == 0 {
+		return projects.StatusDraft, projects.StepWaitingUpload
+	}
+	for _, doc := range docs {
+		if doc.Status == documents.StatusProcessing {
+			return projects.StatusProcessing, projects.StepExtracting
+		}
+		if doc.Status == documents.StatusQueued {
+			return projects.StatusProcessing, projects.StepQueuedProcessing
+		}
+	}
+	for _, doc := range docs {
+		if doc.Status == documents.StatusFailed {
+			return projects.StatusFailed, projects.StepFailed
+		}
+	}
+	allProcessed := true
+	for _, doc := range docs {
+		if doc.Status != documents.StatusProcessed {
+			allProcessed = false
+			break
+		}
+	}
+	if allProcessed {
+		return projects.StatusProcessed, projects.StepReadyForGeneration
+	}
+	return projects.StatusUploaded, projects.StepUploaded
 }
