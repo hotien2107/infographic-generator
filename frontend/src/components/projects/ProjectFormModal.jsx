@@ -13,6 +13,10 @@ const initialValues = {
   input_mode: 'file',
 }
 
+function normalizeInputMode(inputMode) {
+  return inputMode === 'file' ? inputMode : 'file'
+}
+
 export function ProjectFormModal({ open, mode = 'create', project, isSubmitting = false, onClose, onSubmit }) {
   const [values, setValues] = useState(initialValues)
 
@@ -22,7 +26,7 @@ export function ProjectFormModal({ open, mode = 'create', project, isSubmitting 
       setValues({
         title: project.title ?? '',
         description: project.description ?? '',
-        input_mode: project.input_mode ?? 'file',
+        input_mode: normalizeInputMode(project.input_mode),
       })
       return
     }
@@ -38,7 +42,7 @@ export function ProjectFormModal({ open, mode = 'create', project, isSubmitting 
     onSubmit({
       title: values.title.trim(),
       description: values.description.trim(),
-      input_mode: values.input_mode,
+      input_mode: normalizeInputMode(values.input_mode),
     })
   }
 
@@ -68,10 +72,9 @@ export function ProjectFormModal({ open, mode = 'create', project, isSubmitting 
 
         <div className="space-y-3">
           <Label>Loại đầu vào</Label>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-1">
             {[
               { value: 'file', label: 'Tài liệu tải lên', description: 'Dùng khi bạn có file PDF, DOCX hoặc TXT.' },
-              { value: 'text', label: 'Nội dung nhập tay', description: 'Dùng khi bạn muốn tạo dự án từ nội dung soạn trực tiếp.' },
             ].map((option) => (
               <button
                 key={option.value}
