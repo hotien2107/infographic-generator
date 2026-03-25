@@ -55,16 +55,16 @@ export function DashboardPage() {
       {!isLoading && !errorMessage && summary ? (
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <StatCard title="Tổng số dự án" value={summary.total_projects} hint="Tất cả dự án đang được quản lý trên hệ thống." />
-            <StatCard title="Tổng số tài liệu" value={summary.total_documents} hint="Bao gồm toàn bộ tài liệu đã được thêm vào các dự án." />
-            <StatCard title="Dự án đang xử lý" value={summary.processing_projects} hint="Các dự án đang có nội dung được xử lý." />
-            <StatCard title="Dự án hoàn tất" value={summary.completed_projects} hint="Các dự án đã sẵn sàng cho bước tiếp theo." />
-            <StatCard title="Dự án cần chú ý" value={summary.attention_projects} hint="Những dự án đang có lỗi hoặc cần kiểm tra thêm." />
-            <StatCard title="Bản nháp" value={summary.draft_projects} hint="Các dự án mới tạo nhưng chưa có tài liệu nào." />
+            <StatCard title="Tổng số dự án" value={summary.total_projects} hint="Tất cả dự án đang được quản lý trên hệ thống." tone={0} />
+            <StatCard title="Tổng số tài liệu" value={summary.total_documents} hint="Bao gồm toàn bộ tài liệu đã được thêm vào các dự án." tone={1} />
+            <StatCard title="Dự án đang xử lý" value={summary.processing_projects} hint="Các dự án đang có nội dung được xử lý." tone={2} />
+            <StatCard title="Dự án hoàn tất" value={summary.completed_projects} hint="Các dự án đã sẵn sàng cho bước tiếp theo." tone={3} />
+            <StatCard title="Dự án cần chú ý" value={summary.attention_projects} hint="Những dự án đang có lỗi hoặc cần kiểm tra thêm." tone={2} />
+            <StatCard title="Bản nháp" value={summary.draft_projects} hint="Các dự án mới tạo nhưng chưa có tài liệu nào." tone={1} />
           </section>
 
           <section>
-            <Card className="rounded-3xl border-white/70 bg-white/90">
+            <Card className="rounded-3xl border-white/70 bg-gradient-to-br from-white via-white to-indigo-50/60">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-xl">Dự án cập nhật gần đây</CardTitle>
@@ -91,7 +91,7 @@ export function DashboardPage() {
                       <Link
                         key={project.id}
                         to={`/projects/${project.id}`}
-                        className="flex flex-col gap-3 rounded-2xl border border-border px-4 py-4 transition-colors hover:bg-slate-50 md:flex-row md:items-center md:justify-between"
+                        className="flex flex-col gap-3 rounded-2xl border border-primary/10 bg-white/80 px-4 py-4 transition-colors hover:border-primary/30 hover:bg-indigo-50/50 md:flex-row md:items-center md:justify-between"
                       >
                         <div>
                           <p className="font-medium text-slate-900">{project.title}</p>

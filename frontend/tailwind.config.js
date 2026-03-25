@@ -4,34 +4,34 @@ export default {
   theme: {
     extend: {
       colors: {
-        border: 'hsl(214 32% 91%)',
-        input: 'hsl(214 32% 91%)',
-        ring: 'hsl(221 83% 53%)',
-        background: 'hsl(210 40% 98%)',
-        foreground: 'hsl(222.2 84% 4.9%)',
+        border: 'hsl(241 83% 92%)',
+        input: 'hsl(241 83% 92%)',
+        ring: 'hsl(262 90% 62%)',
+        background: 'hsl(222 100% 98%)',
+        foreground: 'hsl(239 46% 16%)',
         primary: {
-          DEFAULT: 'hsl(221 83% 53%)',
-          foreground: 'hsl(210 40% 98%)',
+          DEFAULT: 'hsl(262 90% 62%)',
+          foreground: 'hsl(0 0% 100%)',
         },
         secondary: {
-          DEFAULT: 'hsl(210 40% 96.1%)',
-          foreground: 'hsl(222.2 47.4% 11.2%)',
+          DEFAULT: 'hsl(190 95% 58%)',
+          foreground: 'hsl(223 58% 18%)',
         },
         muted: {
-          DEFAULT: 'hsl(210 40% 96.1%)',
-          foreground: 'hsl(215.4 16.3% 46.9%)',
+          DEFAULT: 'hsl(231 74% 96%)',
+          foreground: 'hsl(231 22% 45%)',
         },
         accent: {
-          DEFAULT: 'hsl(210 40% 96.1%)',
-          foreground: 'hsl(222.2 47.4% 11.2%)',
+          DEFAULT: 'hsl(325 100% 95%)',
+          foreground: 'hsl(327 72% 32%)',
         },
         destructive: {
-          DEFAULT: 'hsl(0 84.2% 60.2%)',
-          foreground: 'hsl(210 40% 98%)',
+          DEFAULT: 'hsl(0 86% 61%)',
+          foreground: 'hsl(0 0% 100%)',
         },
         card: {
           DEFAULT: 'hsl(0 0% 100%)',
-          foreground: 'hsl(222.2 84% 4.9%)',
+          foreground: 'hsl(239 46% 16%)',
         },
       },
       borderRadius: {
@@ -40,7 +40,7 @@ export default {
         sm: '0.375rem',
       },
       boxShadow: {
-        soft: '0 24px 80px -32px rgba(15, 23, 42, 0.3)',
+        soft: '0 24px 80px -32px rgba(67, 56, 202, 0.35)',
       },
     },
   },
