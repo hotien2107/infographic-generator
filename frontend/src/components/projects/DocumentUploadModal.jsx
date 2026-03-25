@@ -26,8 +26,8 @@ export function DocumentUploadModal({ open, isSubmitting = false, onClose, onSub
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-2">
           <Label htmlFor="document-upload">Tệp tài liệu</Label>
-          <Input id="document-upload" type="file" accept=".pdf,.docx,.txt" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-          <p className="text-sm text-muted-foreground">Hỗ trợ PDF, DOCX và TXT.</p>
+          <Input id="document-upload" type="file" accept=".pdf,.txt" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+          <p className="text-sm text-muted-foreground">Hỗ trợ PDF và TXT.</p>
         </div>
 
         <div className="flex justify-end gap-3">

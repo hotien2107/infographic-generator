@@ -32,7 +32,7 @@ func main() {
 	}
 
 	service := projects.NewService(store, blobStorage, nil, cfg.AutoProcessDocuments)
-	worker := processing.NewWorker(service, cfg.ProcessingQueueBuffer, cfg.ProcessingStepDelay, cfg.ProcessingFailPattern)
+	worker := processing.NewWorker(service, cfg.ProcessingQueueBuffer)
 	service.SetProcessor(worker)
 	worker.Start(ctx)
 

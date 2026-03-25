@@ -1,22 +1,21 @@
 export const projectStatusLabels = {
   draft: 'Bản nháp',
-  uploaded: 'Đã thêm tài liệu',
-  processing: 'Đang xử lý',
-  processed: 'Hoàn tất',
-  failed: 'Cần chú ý',
+  uploaded: 'Đã nhận dữ liệu',
+  extracting: 'Đang trích xuất',
+  extracted: 'Đã trích xuất',
+  failed: 'Thất bại',
 }
 
 export const documentStatusLabels = {
   uploaded: 'Đã tải lên',
-  queued: 'Đang chờ xử lý',
-  processing: 'Đang xử lý',
-  processed: 'Hoàn tất',
-  failed: 'Cần kiểm tra',
+  extracting: 'Đang trích xuất',
+  extracted: 'Đã trích xuất',
+  failed: 'Thất bại',
 }
 
 export function badgeVariantForStatus(status) {
-  if (status === 'processed') return 'success'
+  if (status === 'extracted') return 'success'
   if (status === 'failed') return 'destructive'
-  if (status === 'processing' || status === 'queued') return 'warning'
+  if (status === 'extracting') return 'warning'
   return 'outline'
 }

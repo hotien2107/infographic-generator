@@ -39,7 +39,7 @@ func LoadFromPaths(paths ...string) Config {
 		AppEnv:                getEnv("APP_ENV", "development"),
 		Port:                  getEnv("API_PORT", "8080"),
 		MaxUploadSizeMB:       getEnvAsInt("MAX_UPLOAD_SIZE_MB", 10),
-		AllowedFileTypes:      getEnvAsSlice("ALLOWED_FILE_TYPES", []string{"pdf", "docx", "txt"}),
+		AllowedFileTypes:      getEnvAsSlice("ALLOWED_FILE_TYPES", []string{"pdf", "txt"}),
 		PostgresURL:           getEnv("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/infographic_generator?sslmode=disable"),
 		MinIOEndpoint:         getEnv("MINIO_ENDPOINT", "localhost:9000"),
 		MinIOAccessKey:        getEnv("MINIO_ACCESS_KEY", "minioadmin"),
