@@ -3,16 +3,18 @@ package processing
 import (
 	"context"
 	"fmt"
-	"strings"
+	"log"
 	"time"
 
+	"infographic-generator/backend/internal/extraction"
 	"infographic-generator/backend/internal/modules/documents"
 )
 
 type StateStore interface {
-	MarkDocumentProcessingStarted(ctx context.Context, projectID, documentID string, startedAt time.Time) error
-	MarkDocumentProcessed(ctx context.Context, projectID, documentID string, startedAt, finishedAt time.Time, preview string) error
-	MarkDocumentFailed(ctx context.Context, projectID, documentID string, startedAt, finishedAt time.Time, message string) error
+	MarkDocumentExtractionStarted(ctx context.Context, projectID, documentID string, startedAt time.Time) error
+	MarkDocumentExtracted(ctx context.Context, projectID, documentID string, startedAt, endedAt time.Time, rawText string, metadata documents.RawContentMetadata) error
+	MarkDocumentExtractionFailed(ctx context.Context, projectID, documentID string, startedAt, endedAt time.Time, message string) error
+	LoadDocumentPayload(ctx context.Context, storageKey string) ([]byte, error)
 }
 
 type Task struct {
@@ -21,25 +23,16 @@ type Task struct {
 }
 
 type Worker struct {
-	store       StateStore
-	queue       chan Task
-	stepDelay   time.Duration
-	failPattern string
+	store     StateStore
+	queue     chan Task
+	extractor *extraction.Service
 }
 
-func NewWorker(store StateStore, queueBuffer int, stepDelay time.Duration, failPattern string) *Worker {
+func NewWorker(store StateStore, queueBuffer int) *Worker {
 	if queueBuffer <= 0 {
 		queueBuffer = 8
 	}
-	if stepDelay <= 0 {
-		stepDelay = 150 * time.Millisecond
-	}
-	return &Worker{
-		store:       store,
-		queue:       make(chan Task, queueBuffer),
-		stepDelay:   stepDelay,
-		failPattern: strings.ToLower(strings.TrimSpace(failPattern)),
-	}
+	return &Worker{store: store, queue: make(chan Task, queueBuffer), extractor: extraction.NewService()}
 }
 
 func (w *Worker) Start(ctx context.Context) {
@@ -65,30 +58,36 @@ func (w *Worker) Enqueue(task Task) error {
 }
 
 func (w *Worker) processTask(ctx context.Context, task Task) {
+	log.Printf("[extract][start] project=%s document=%s", task.ProjectID, task.Document.ID)
 	startedAt := time.Now().UTC()
-	_ = w.store.MarkDocumentProcessingStarted(ctx, task.ProjectID, task.Document.ID, startedAt)
+	_ = w.store.MarkDocumentExtractionStarted(ctx, task.ProjectID, task.Document.ID, startedAt)
 
-	timer := time.NewTimer(w.stepDelay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return
-	case <-timer.C:
-	}
-
-	filename := strings.ToLower(task.Document.Filename)
-	if w.failPattern != "" && strings.Contains(filename, w.failPattern) {
-		finishedAt := time.Now().UTC()
-		message := fmt.Sprintf("simulated processing failure for %s", task.Document.Filename)
-		_ = w.store.MarkDocumentFailed(ctx, task.ProjectID, task.Document.ID, startedAt, finishedAt, message)
+	result, err := w.extract(task, ctx)
+	if err != nil {
+		endedAt := time.Now().UTC()
+		log.Printf("[extract][failed] project=%s document=%s err=%v", task.ProjectID, task.Document.ID, err)
+		_ = w.store.MarkDocumentExtractionFailed(ctx, task.ProjectID, task.Document.ID, startedAt, endedAt, err.Error())
 		return
 	}
-
-	finishedAt := time.Now().UTC()
-	preview := buildPreview(task.Document)
-	_ = w.store.MarkDocumentProcessed(ctx, task.ProjectID, task.Document.ID, startedAt, finishedAt, preview)
+	result.Metadata.ExtractedAt = time.Now().UTC()
+	endedAt := time.Now().UTC()
+	if err := w.store.MarkDocumentExtracted(ctx, task.ProjectID, task.Document.ID, startedAt, endedAt, result.RawText, result.Metadata); err != nil {
+		log.Printf("[extract][failed-to-save] project=%s document=%s err=%v", task.ProjectID, task.Document.ID, err)
+		return
+	}
+	log.Printf("[extract][success] project=%s document=%s chars=%d", task.ProjectID, task.Document.ID, len(result.RawText))
 }
 
-func buildPreview(document documents.Document) string {
-	return fmt.Sprintf("Simulated extraction preview for %s (%s, %d bytes).", document.Filename, document.MimeType, document.SizeBytes)
+func (w *Worker) extract(task Task, ctx context.Context) (extraction.Result, error) {
+	if task.Document.SourceType == documents.SourceTypeText {
+		if task.Document.RawText == nil {
+			return extraction.Result{}, fmt.Errorf("missing raw text for text document")
+		}
+		return w.extractor.ExtractFromText(*task.Document.RawText)
+	}
+	payload, err := w.store.LoadDocumentPayload(ctx, task.Document.StorageKey)
+	if err != nil {
+		return extraction.Result{}, err
+	}
+	return w.extractor.ExtractFromFile(task.Document.FileType, payload)
 }

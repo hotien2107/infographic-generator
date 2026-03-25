@@ -14,6 +14,7 @@ import { ProjectFormModal } from '@/components/projects/ProjectFormModal'
 import { StatusBadge } from '@/components/projects/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
 import { projectApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { toErrorMessage } from '@/lib/http'
@@ -30,6 +31,8 @@ export function ProjectDetailPage() {
   const [documentToDelete, setDocumentToDelete] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [rawTextInput, setRawTextInput] = useState('')
+  const [notice, setNotice] = useState(null)
 
   const project = detail?.project ?? null
   const documents = useMemo(() => detail?.documents ?? [], [detail])
@@ -74,6 +77,23 @@ export function ProjectDetailPage() {
       await loadProject()
     } catch (error) {
       setErrorMessage(toErrorMessage(error, 'Không thể thêm tài liệu.'))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+
+  async function handleSubmitText() {
+    if (!project || !rawTextInput.trim()) return
+    setIsSubmitting(true)
+    setNotice(null)
+    try {
+      await projectApi.submitText(project.id, rawTextInput.trim())
+      setNotice('Đã gửi nội dung, hệ thống đang trích xuất.')
+      setRawTextInput('')
+      await loadProject()
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error, 'Không thể gửi nội dung text.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -127,7 +147,7 @@ export function ProjectDetailPage() {
                 Chỉnh sửa dự án
               </Button>
             ) : null}
-            {project ? (
+            {project && project.input_mode === 'file' ? (
               <Button onClick={() => setIsDocumentModalOpen(true)}>
                 <FilePlus2 className="h-4 w-4" />
                 Thêm tài liệu
@@ -149,6 +169,7 @@ export function ProjectDetailPage() {
 
       {!isLoading && !errorMessage && project ? (
         <>
+          {notice ? <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
           <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
             <Card className="rounded-3xl border-white/70 bg-white/90">
               <CardContent className="space-y-5 p-6">
@@ -180,8 +201,8 @@ export function ProjectDetailPage() {
                 {[
                   { label: 'Tổng tài liệu', value: project.processing_summary.total_documents },
                   { label: 'Đã tải lên', value: project.processing_summary.uploaded_documents },
-                  { label: 'Đang xử lý', value: project.processing_summary.processing_documents + project.processing_summary.queued_documents },
-                  { label: 'Hoàn tất', value: project.processing_summary.processed_documents },
+                  { label: 'Đang xử lý', value: project.processing_summary.extracting_documents },
+                  { label: 'Hoàn tất', value: project.processing_summary.extracted_documents },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl bg-slate-50 p-4">
                     <p className="text-sm text-muted-foreground">{item.label}</p>
@@ -191,6 +212,20 @@ export function ProjectDetailPage() {
               </CardContent>
             </Card>
           </section>
+
+
+          {project.input_mode === 'text' ? (
+            <section className="space-y-3">
+              <h3 className="text-xl font-semibold text-slate-950">Nhập nội dung trực tiếp</h3>
+              <p className="text-sm text-muted-foreground">Dán nội dung thô để hệ thống trích xuất theo pipeline.</p>
+              <Textarea value={rawTextInput} onChange={(event) => setRawTextInput(event.target.value)} rows={8} placeholder="Nhập hoặc dán nội dung..." />
+              <div>
+                <Button onClick={handleSubmitText} disabled={isSubmitting || rawTextInput.trim().length < 10}>
+                  {isSubmitting ? 'Đang gửi...' : 'Gửi nội dung để trích xuất'}
+                </Button>
+              </div>
+            </section>
+          ) : null}
 
           <section className="space-y-4">
             <div className="flex items-center justify-between gap-3">
@@ -203,7 +238,7 @@ export function ProjectDetailPage() {
             {documents.length === 0 ? (
               <EmptyState
                 title="Dự án chưa có tài liệu"
-                description="Thêm tài liệu để bắt đầu chuẩn bị nội dung cho infographic của bạn."
+                description="Thêm tài liệu hoặc nhập text để bắt đầu chuẩn bị nội dung cho infographic của bạn."
                 action={<Button onClick={() => setIsDocumentModalOpen(true)}>Thêm tài liệu</Button>}
               />
             ) : (

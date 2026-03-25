@@ -40,7 +40,7 @@ func TestProjectFromRow_ParsesPostgresTimestampFormat(t *testing.T) {
 		"project-1",
 		"title",
 		"description",
-		string(InputModeUpload),
+		string(InputModeFile),
 		string(StatusDraft),
 		string(StepWaitingUpload),
 		"2026-03-25 13:38:47.177049+07",

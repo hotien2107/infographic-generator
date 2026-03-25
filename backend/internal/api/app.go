@@ -31,6 +31,7 @@ type projectService interface {
 	DeleteDocument(ctx context.Context, projectID, documentID string) error
 	UploadDocument(ctx context.Context, projectID, originalFilename string, fileHeader *multipart.FileHeader) (projects.Project, documents.Document, error)
 	TriggerProcessing(ctx context.Context, projectID string) (projects.Project, documents.Document, error)
+	SubmitText(ctx context.Context, projectID, rawText string) (projects.Project, documents.Document, error)
 }
 
 type App struct {
@@ -67,6 +68,10 @@ type updateDocumentRequest struct {
 	Filename *string `json:"filename"`
 }
 
+type submitTextRequest struct {
+	RawText string `json:"raw_text"`
+}
+
 type projectResponse struct {
 	ID                string                     `json:"id"`
 	Title             string                     `json:"title"`
@@ -80,18 +85,21 @@ type projectResponse struct {
 }
 
 type documentResponse struct {
-	ID                   string           `json:"id"`
-	ProjectID            string           `json:"project_id"`
-	Filename             string           `json:"filename"`
-	MimeType             string           `json:"mime_type"`
-	SizeBytes            int64            `json:"size_bytes"`
-	Status               documents.Status `json:"status"`
-	ProcessingStartedAt  *time.Time       `json:"processing_started_at"`
-	ProcessingFinishedAt *time.Time       `json:"processing_finished_at"`
-	ErrorMessage         *string          `json:"error_message"`
-	ExtractedTextPreview *string          `json:"extracted_text_preview"`
-	CreatedAt            time.Time        `json:"created_at"`
-	UpdatedAt            time.Time        `json:"updated_at"`
+	ID                  string                        `json:"id"`
+	ProjectID           string                        `json:"project_id"`
+	Filename            string                        `json:"filename"`
+	MimeType            string                        `json:"mime_type"`
+	SizeBytes           int64                         `json:"size_bytes"`
+	SourceType          documents.SourceType          `json:"source_type"`
+	FileType            documents.FileType            `json:"file_type"`
+	Status              documents.Status              `json:"status"`
+	RawText             *string                       `json:"raw_text"`
+	Metadata            *documents.RawContentMetadata `json:"metadata"`
+	ExtractionStartedAt *time.Time                    `json:"extraction_started_at"`
+	ExtractionEndedAt   *time.Time                    `json:"extraction_ended_at"`
+	ErrorMessage        *string                       `json:"error_message"`
+	CreatedAt           time.Time                     `json:"created_at"`
+	UpdatedAt           time.Time                     `json:"updated_at"`
 }
 
 func New(cfg config.Config, store projects.Store, blobStorage storage.BlobStorage, service projectService) *App {
@@ -166,6 +174,9 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		case len(parts) == 2 && parts[1] == "processing" && r.Method == http.MethodPost:
 			a.triggerProcessing(w, r, parts[0])
+			return
+		case len(parts) == 2 && parts[1] == "text" && r.Method == http.MethodPost:
+			a.submitText(w, r, parts[0])
 			return
 		case len(parts) == 3 && parts[1] == "documents" && r.Method == http.MethodPatch:
 			a.updateDocument(w, r, parts[0], parts[2])
@@ -474,6 +485,35 @@ func (a *App) triggerProcessing(w http.ResponseWriter, r *http.Request, projectI
 	}, nil, meta(requestID)))
 }
 
+func (a *App) submitText(w http.ResponseWriter, r *http.Request, projectID string) {
+	requestID := utils.NewUUID()
+	if !utils.IsUUID(projectID) {
+		field := "projectId"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "projectId must be a valid UUID", &field)
+		return
+	}
+	defer r.Body.Close()
+	var payload submitTextRequest
+	if err := decodeStrictJSON(r, &payload); err != nil {
+		field := "body"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", err.Error(), &field)
+		return
+	}
+	rawText := strings.TrimSpace(payload.RawText)
+	if len(rawText) < 10 {
+		field := "raw_text"
+		a.writeError(w, http.StatusBadRequest, requestID, "VALIDATION_ERROR", "raw_text must be at least 10 characters", &field)
+		return
+	}
+	project, document, err := a.service.SubmitText(r.Context(), projectID, rawText)
+	if err != nil {
+		status, code, message := mapDomainError(err)
+		a.writeError(w, status, requestID, code, message, nil)
+		return
+	}
+	a.writeJSON(w, http.StatusAccepted, envelope(map[string]any{"project": serializeProject(project, project.ProcessingSummary.TotalDocuments, true), "document": serializeDocument(document)}, nil, meta(requestID)))
+}
+
 func (a *App) validateUploadRequest(r *http.Request) (*multipart.FileHeader, string, error) {
 	if err := r.ParseMultipartForm(int64(a.config.MaxUploadSizeMB+1) * 1024 * 1024); err != nil {
 		return nil, "", errInvalidMultipart
@@ -657,18 +697,21 @@ func serializeProjectListItem(item projects.ProjectListItem) projectResponse {
 
 func serializeDocument(document documents.Document) documentResponse {
 	return documentResponse{
-		ID:                   document.ID,
-		ProjectID:            document.ProjectID,
-		Filename:             document.Filename,
-		MimeType:             document.MimeType,
-		SizeBytes:            document.SizeBytes,
-		Status:               document.Status,
-		ProcessingStartedAt:  document.ProcessingStartedAt,
-		ProcessingFinishedAt: document.ProcessingFinishedAt,
-		ErrorMessage:         document.ErrorMessage,
-		ExtractedTextPreview: document.ExtractedTextPreview,
-		CreatedAt:            document.CreatedAt,
-		UpdatedAt:            document.UpdatedAt,
+		ID:                  document.ID,
+		ProjectID:           document.ProjectID,
+		Filename:            document.Filename,
+		MimeType:            document.MimeType,
+		SizeBytes:           document.SizeBytes,
+		SourceType:          document.SourceType,
+		FileType:            document.FileType,
+		Status:              document.Status,
+		RawText:             document.RawText,
+		Metadata:            document.Metadata,
+		ExtractionStartedAt: document.ExtractionStartedAt,
+		ExtractionEndedAt:   document.ExtractionEndedAt,
+		ErrorMessage:        document.ErrorMessage,
+		CreatedAt:           document.CreatedAt,
+		UpdatedAt:           document.UpdatedAt,
 	}
 }
 
