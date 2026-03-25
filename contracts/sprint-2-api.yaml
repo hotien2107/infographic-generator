@@ -1,533 +1,59 @@
 openapi: 3.1.0
 info:
   title: Infographic Workspace API
-  version: 2.1.0
-  summary: API quản lý dự án, tài liệu và số liệu tổng quan.
-servers:
-  - url: http://localhost:8080
-    description: Local API server
-
-tags:
-  - name: Dashboard
-  - name: Projects
-  - name: Documents
-  - name: Processing
-
+  version: 2.2.0
 paths:
-  /api/v1/dashboard/summary:
-    get:
-      tags: [Dashboard]
-      summary: Lấy số liệu tổng quan cho dashboard
-      operationId: getDashboardSummary
-      responses:
-        '200':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DashboardSummaryEnvelope'
-
   /api/v1/projects:
     get:
-      tags: [Projects]
-      summary: Lấy danh sách dự án
-      operationId: listProjects
       responses:
-        '200':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectListEnvelope'
+        '200': { description: OK }
     post:
-      tags: [Projects]
-      summary: Tạo dự án mới
-      operationId: createProject
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateProjectRequest'
       responses:
-        '201':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-
+        '201': { description: Created }
   /api/v1/projects/{projectId}:
     get:
-      tags: [Projects]
-      summary: Lấy chi tiết dự án và danh sách tài liệu
-      operationId: getProject
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
       responses:
-        '200':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectDetailEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/ProjectNotFound'
-    patch:
-      tags: [Projects]
-      summary: Cập nhật dự án
-      operationId: updateProject
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateProjectRequest'
-      responses:
-        '200':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/ProjectNotFound'
-    delete:
-      tags: [Projects]
-      summary: Xóa dự án
-      operationId: deleteProject
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '200':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DeleteEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/ProjectNotFound'
-
+        '200': { description: OK }
   /api/v1/projects/{projectId}/documents:
-    get:
-      tags: [Documents]
-      summary: Lấy danh sách tài liệu theo dự án
-      operationId: listProjectDocuments
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '200':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentListEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/ProjectNotFound'
     post:
-      tags: [Documents]
-      summary: Tải tài liệu lên dự án
-      operationId: uploadProjectDocument
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/UploadDocumentRequest'
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Chỉ hỗ trợ PDF hoặc TXT.
       responses:
-        '202':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProcessingEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/ProjectNotFound'
-
-  /api/v1/projects/{projectId}/documents/{documentId}:
-    patch:
-      tags: [Documents]
-      summary: Cập nhật thông tin tài liệu
-      operationId: updateDocument
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - $ref: '#/components/parameters/DocumentId'
+        '202': { description: Accepted }
+  /api/v1/projects/{projectId}/text:
+    post:
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateDocumentRequest'
+              type: object
+              required: [raw_text]
+              properties:
+                raw_text:
+                  type: string
+                  minLength: 10
       responses:
-        '200':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/DocumentNotFound'
-    delete:
-      tags: [Documents]
-      summary: Xóa tài liệu khỏi dự án
-      operationId: deleteDocument
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - $ref: '#/components/parameters/DocumentId'
-      responses:
-        '200':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DeleteEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/DocumentNotFound'
-
+        '202': { description: Accepted }
   /api/v1/projects/{projectId}/processing:
     post:
-      tags: [Processing]
-      summary: Đưa tài liệu mới nhất vào hàng đợi xử lý
-      operationId: triggerProjectProcessing
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
       responses:
-        '202':
-          description: Thành công
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProcessingEnvelope'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/DocumentNotFound'
-
+        '202': { description: Accepted }
 components:
-  parameters:
-    ProjectId:
-      name: projectId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    DocumentId:
-      name: documentId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-
-  responses:
-    ValidationError:
-      description: Dữ liệu không hợp lệ
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorEnvelope'
-    ProjectNotFound:
-      description: Không tìm thấy dự án
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorEnvelope'
-    DocumentNotFound:
-      description: Không tìm thấy tài liệu
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorEnvelope'
-
   schemas:
-    EnvelopeMeta:
-      type: object
-      properties:
-        request_id:
-          type: string
-        timestamp:
-          type: string
-          format: date-time
-      required: [request_id, timestamp]
-
-    ErrorDetail:
-      type: object
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-        field:
-          type: [string, 'null']
-      required: [code, message, field]
-
-    ErrorEnvelope:
-      type: object
-      properties:
-        data:
-          type: 'null'
-        error:
-          $ref: '#/components/schemas/ErrorDetail'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
-
-    DashboardSummary:
-      type: object
-      properties:
-        total_projects: { type: integer }
-        total_documents: { type: integer }
-        processing_projects: { type: integer }
-        completed_projects: { type: integer }
-        attention_projects: { type: integer }
-        draft_projects: { type: integer }
-      required: [total_projects, total_documents, processing_projects, completed_projects, attention_projects, draft_projects]
-
-    ProcessingSummary:
-      type: object
-      properties:
-        total_documents: { type: integer }
-        uploaded_documents: { type: integer }
-        queued_documents: { type: integer }
-        processing_documents: { type: integer }
-        processed_documents: { type: integer }
-        failed_documents: { type: integer }
-        last_processed_at:
-          type: [string, 'null']
-          format: date-time
-        last_error:
-          type: [string, 'null']
-      required: [total_documents, uploaded_documents, queued_documents, processing_documents, processed_documents, failed_documents, last_processed_at, last_error]
-
-    Project:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
-        title: { type: string }
-        description: { type: string }
-        input_mode:
-          type: string
-          enum: [file, text]
-        status:
-          type: string
-          enum: [draft, uploaded, processing, processed, failed]
-        document_count: { type: integer }
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        processing_summary:
-          $ref: '#/components/schemas/ProcessingSummary'
-      required: [id, title, description, input_mode, status, created_at, updated_at]
-
-    Document:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
-        project_id: { type: string, format: uuid }
-        filename: { type: string }
-        mime_type: { type: string }
-        size_bytes: { type: integer }
-        status:
-          type: string
-          enum: [uploaded, queued, processing, processed, failed]
-        processing_started_at:
-          type: [string, 'null']
-          format: date-time
-        processing_finished_at:
-          type: [string, 'null']
-          format: date-time
-        error_message:
-          type: [string, 'null']
-        extracted_text_preview:
-          type: [string, 'null']
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required: [id, project_id, filename, mime_type, size_bytes, status, processing_started_at, processing_finished_at, error_message, extracted_text_preview, created_at, updated_at]
-
-    CreateProjectRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        title:
-          type: string
-          minLength: 3
-          maxLength: 120
-        description:
-          type: string
-          maxLength: 280
-        input_mode:
-          type: string
-          enum: [file, text]
-      required: [title, input_mode]
-
-    UpdateProjectRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        title:
-          type: string
-          minLength: 3
-          maxLength: 120
-        description:
-          type: string
-          maxLength: 280
-        input_mode:
-          type: string
-          enum: [file, text]
-
-    UploadDocumentRequest:
-      type: object
-      properties:
-        file:
-          type: string
-          format: binary
-        original_filename:
-          type: string
-      required: [file]
-
-    UpdateDocumentRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        filename:
-          type: string
-          minLength: 3
-          maxLength: 180
-      required: [filename]
-
-    DashboardSummaryEnvelope:
-      type: object
-      properties:
-        data:
-          $ref: '#/components/schemas/DashboardSummary'
-        error:
-          type: 'null'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
-
-    ProjectEnvelope:
-      type: object
-      properties:
-        data:
-          $ref: '#/components/schemas/Project'
-        error:
-          type: 'null'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
-
-    ProjectListEnvelope:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Project'
-        error:
-          type: 'null'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
-
-    ProjectDetailEnvelope:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            project:
-              $ref: '#/components/schemas/Project'
-            documents:
-              type: array
-              items:
-                $ref: '#/components/schemas/Document'
-          required: [project, documents]
-        error:
-          type: 'null'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
-
-    DocumentEnvelope:
-      type: object
-      properties:
-        data:
-          $ref: '#/components/schemas/Document'
-        error:
-          type: 'null'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
-
-    DocumentListEnvelope:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Document'
-        error:
-          type: 'null'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
-
-    ProcessingEnvelope:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            project:
-              $ref: '#/components/schemas/Project'
-            document:
-              $ref: '#/components/schemas/Document'
-          required: [project, document]
-        error:
-          type: 'null'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
-
-    DeleteEnvelope:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            id:
-              type: string
-        error:
-          type: 'null'
-        meta:
-          $ref: '#/components/schemas/EnvelopeMeta'
-      required: [data, error, meta]
+    ProjectStatus:
+      type: string
+      enum: [draft, uploaded, extracting, extracted, failed]
+    DocumentStatus:
+      type: string
+      enum: [uploaded, extracting, extracted, failed]

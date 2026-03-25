@@ -15,6 +15,7 @@
 - Danh sách dự án riêng, hỗ trợ tạo, sửa, xóa.
 - Trang chi tiết dự án với thông tin tổng quan và danh sách tài liệu.
 - Thêm, đổi tên, xóa tài liệu ngay trong màn hình chi tiết dự án.
+- Hỗ trợ nhập text trực tiếp hoặc upload PDF/TXT và theo dõi pipeline extraction (uploaded/extracting/extracted/failed).
 - Backend tự đọc cấu hình từ file `.env` nếu file tồn tại; biến nào không có thì mới dùng giá trị mặc định trong code.
 
 ## Chạy backend local
@@ -72,6 +73,7 @@ Frontend mặc định chạy ở `http://localhost:5173`.
 - `PATCH /api/v1/projects/{projectId}/documents/{documentId}`
 - `DELETE /api/v1/projects/{projectId}/documents/{documentId}`
 - `POST /api/v1/projects/{projectId}/processing`
+- `POST /api/v1/projects/{projectId}/text`
 
 ## Test
 

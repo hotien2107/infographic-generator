@@ -14,7 +14,7 @@ const initialValues = {
 }
 
 function normalizeInputMode(inputMode) {
-  return inputMode === 'file' ? inputMode : 'file'
+  return inputMode === 'text' ? 'text' : 'file'
 }
 
 export function ProjectFormModal({ open, mode = 'create', project, isSubmitting = false, onClose, onSubmit }) {
@@ -74,7 +74,8 @@ export function ProjectFormModal({ open, mode = 'create', project, isSubmitting 
           <Label>Loại đầu vào</Label>
           <div className="grid gap-3 sm:grid-cols-1">
             {[
-              { value: 'file', label: 'Tài liệu tải lên', description: 'Dùng khi bạn có file PDF, DOCX hoặc TXT.' },
+              { value: 'file', label: 'Tải file tài liệu', description: 'Dùng khi bạn có file PDF hoặc TXT.' },
+              { value: 'text', label: 'Nhập text trực tiếp', description: 'Dán nội dung thô để hệ thống trích xuất.' },
             ].map((option) => (
               <button
                 key={option.value}

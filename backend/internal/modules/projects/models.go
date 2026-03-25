@@ -14,13 +14,13 @@ const (
 
 	StatusDraft      Status = "draft"
 	StatusUploaded   Status = "uploaded"
-	StatusProcessing Status = "processing"
-	StatusProcessed  Status = "processed"
+	StatusExtracting Status = "extracting"
+	StatusExtracted  Status = "extracted"
 	StatusFailed     Status = "failed"
 
 	StepWaitingUpload      Step = "waiting_for_upload"
 	StepUploaded           Step = "uploaded"
-	StepQueuedProcessing   Step = "queued_for_processing"
+	StepQueuedForExtract   Step = "queued_for_extraction"
 	StepExtracting         Step = "extracting"
 	StepReadyForGeneration Step = "ready_for_generation"
 	StepFailed             Step = "failed"
@@ -61,12 +61,11 @@ type ProjectUpdate struct {
 type ProcessingSummary struct {
 	TotalDocuments      int        `json:"total_documents"`
 	UploadedDocuments   int        `json:"uploaded_documents"`
-	QueuedDocuments     int        `json:"queued_documents"`
-	ProcessingDocuments int        `json:"processing_documents"`
-	ProcessedDocuments  int        `json:"processed_documents"`
+	ExtractingDocuments int        `json:"extracting_documents"`
+	ExtractedDocuments  int        `json:"extracted_documents"`
 	FailedDocuments     int        `json:"failed_documents"`
-	LastProcessedAt     *time.Time `json:"last_processed_at"`
-	LastError           *string    `json:"last_error"`
+	LastExtractionAt    *time.Time `json:"last_extraction_at"`
+	LastExtractionError *string    `json:"last_extraction_error"`
 }
 
 type Detail struct {

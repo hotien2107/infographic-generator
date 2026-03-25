@@ -14,7 +14,7 @@ export function DocumentTable({ documents, onRename, onDelete }) {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-semibold text-slate-900">{document.filename}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{document.error_message || document.extracted_text_preview || 'Sẵn sàng cho bước tiếp theo.'}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{document.error_message || document.raw_text?.slice(0, 140) || 'Sẵn sàng cho bước tiếp theo.'}</p>
               </div>
               <StatusBadge status={document.status} type="document" />
             </div>
@@ -55,7 +55,7 @@ export function DocumentTable({ documents, onRename, onDelete }) {
                 <td className="px-5 py-4 align-top">
                   <div>
                     <p className="font-medium text-slate-900">{document.filename}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{document.error_message || document.extracted_text_preview || 'Sẵn sàng cho bước tiếp theo.'}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{document.error_message || document.raw_text?.slice(0, 140) || 'Sẵn sàng cho bước tiếp theo.'}</p>
                   </div>
                 </td>
                 <td className="px-5 py-4 align-top text-slate-700">{document.mime_type}</td>

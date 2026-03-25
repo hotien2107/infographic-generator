@@ -90,4 +90,17 @@ export const projectApi = {
       method: 'DELETE',
     })
   },
+
+  submitText(projectId, rawText) {
+    return request(`/api/v1/projects/${projectId}/text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ raw_text: rawText }),
+    })
+  },
+  triggerProcessing(projectId) {
+    return request(`/api/v1/projects/${projectId}/processing`, { method: 'POST' })
+  },
 }
