@@ -562,11 +562,11 @@ func projectFromRow(row postgres.Row) (Project, error) {
 	if len(row) != 8 {
 		return Project{}, fmt.Errorf("unexpected project row column count: %d", len(row))
 	}
-	createdAt, err := time.Parse(time.RFC3339Nano, row[6])
+	createdAt, err := parseTimestamp(row[6])
 	if err != nil {
 		return Project{}, fmt.Errorf("parse project created_at: %w", err)
 	}
-	updatedAt, err := time.Parse(time.RFC3339Nano, row[7])
+	updatedAt, err := parseTimestamp(row[7])
 	if err != nil {
 		return Project{}, fmt.Errorf("parse project updated_at: %w", err)
 	}
@@ -613,11 +613,11 @@ func documentFromRow(row postgres.Row) (documents.Document, error) {
 	if err != nil {
 		return documents.Document{}, fmt.Errorf("parse document processing_finished_at: %w", err)
 	}
-	createdAt, err := time.Parse(time.RFC3339Nano, row[11])
+	createdAt, err := parseTimestamp(row[11])
 	if err != nil {
 		return documents.Document{}, fmt.Errorf("parse document created_at: %w", err)
 	}
-	updatedAt, err := time.Parse(time.RFC3339Nano, row[12])
+	updatedAt, err := parseTimestamp(row[12])
 	if err != nil {
 		return documents.Document{}, fmt.Errorf("parse document updated_at: %w", err)
 	}
@@ -642,11 +642,33 @@ func nullableTime(value string) (*time.Time, error) {
 	if value == "" {
 		return nil, nil
 	}
-	parsed, err := time.Parse(time.RFC3339Nano, value)
+	parsed, err := parseTimestamp(value)
 	if err != nil {
 		return nil, err
 	}
 	return &parsed, nil
+}
+
+func parseTimestamp(value string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999Z07:00",
+		"2006-01-02 15:04:05.999999999Z07",
+		"2006-01-02 15:04:05Z07:00",
+		"2006-01-02 15:04:05Z07",
+	}
+	var lastErr error
+	for _, layout := range layouts {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("unsupported timestamp format")
+	}
+	return time.Time{}, lastErr
 }
 
 func nullableString(value string) *string {
